@@ -1,7 +1,7 @@
 {
   "name": "sugi/notion-daily-report",
   "description": "Phase 1 PHP CLI batch for extracting near-term Notion items into a daily report.",
-  "license": "proprietary",
+  "license": "Apache-2.0",
   "type": "project",
   "require": {
     "php": "^8.1",

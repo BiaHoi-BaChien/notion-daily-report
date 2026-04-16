@@ -1,5 +1,6 @@
 .env
 vendor/
+composer.phar
 app/logs/*.log
 app/logs/*.json
 .phpunit.cache/

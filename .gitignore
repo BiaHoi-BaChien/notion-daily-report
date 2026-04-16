@@ -1,0 +1,10 @@
+.env
+vendor/
+app/logs/*.log
+app/logs/*.json
+.phpunit.cache/
+.cache/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

@@ -8,6 +8,8 @@ use App\DailyReportCommand;
 use App\DateFilter;
 use App\Logger;
 use App\NotionClientInterface;
+use App\OpenAIClientInterface;
+use App\MailNotifierInterface;
 use App\PropertyExtractor;
 use App\ReportBuilder;
 use App\SlackNotifierInterface;
@@ -140,6 +142,43 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringNotContainsString('Source failed', $output);
     }
 
+    public function testUsesOpenAISummaryForSlackAndMailWhenConfigured(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $slack = new StubSlackNotifier();
+        $mail = new StubMailNotifier();
+        $openai = new StubOpenAIClient('1. 今日やること' . PHP_EOL . '- 要約済みタスク');
+
+        $command = new DailyReportCommand(
+            $this->config(),
+            new StubNotionClient([
+                $this->page('Today task', '2026-04-16', '未着手'),
+            ]),
+            new PropertyExtractor($timezone),
+            new DateFilter($timezone),
+            new ReportBuilder($timezone),
+            new Logger($logPath, $timezone),
+            $timezone,
+            false,
+            $slack,
+            $openai,
+            $mail
+        );
+
+        ob_start();
+        $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
+        $output = (string) ob_get_clean();
+
+        self::assertSame(0, $exitCode);
+        self::assertStringContainsString('要約済みタスク', $output);
+        self::assertStringNotContainsString('Today task', $output);
+        self::assertSame($output, $slack->sentText);
+        self::assertSame($output, $mail->sentBody);
+        self::assertSame('Notion Daily Report 2026-04-16', $mail->sentSubject);
+        self::assertSame('Today task', $openai->receivedItems[0]['title']);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -251,5 +290,45 @@ final class StubSlackNotifier implements SlackNotifierInterface
     public function send(string $text): void
     {
         $this->sentText = $text;
+    }
+}
+
+final class StubOpenAIClient implements OpenAIClientInterface
+{
+    /**
+     * @var array<int, array<string, mixed>>
+     */
+    public array $receivedItems = [];
+
+    public function __construct(private readonly string $summary)
+    {
+    }
+
+    public function isConfigured(): bool
+    {
+        return true;
+    }
+
+    public function summarize(array $items): string
+    {
+        $this->receivedItems = $items;
+        return $this->summary;
+    }
+}
+
+final class StubMailNotifier implements MailNotifierInterface
+{
+    public ?string $sentSubject = null;
+    public ?string $sentBody = null;
+
+    public function isConfigured(): bool
+    {
+        return true;
+    }
+
+    public function send(string $subject, string $body): void
+    {
+        $this->sentSubject = $subject;
+        $this->sentBody = $body;
     }
 }

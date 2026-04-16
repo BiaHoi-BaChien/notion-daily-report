@@ -21,6 +21,8 @@ final class Bootstrap
             $logger = new Logger(self::resolvePath($projectRoot, (string) $config['log_path']), $timezone);
             $notion = $config['notion'];
             $slack = $config['slack'] ?? [];
+            $openai = $config['openai'] ?? [];
+            $mail = $config['mail'] ?? [];
 
             $command = new DailyReportCommand(
                 $config,
@@ -38,6 +40,20 @@ final class Bootstrap
                 new SlackNotifier(
                     (string) ($slack['webhook_url'] ?? ''),
                     (int) ($slack['timeout'] ?? 10)
+                ),
+                new OpenAIClient(
+                    (string) ($openai['api_key'] ?? ''),
+                    (string) ($openai['model'] ?? 'gpt-5.2'),
+                    (int) ($openai['timeout'] ?? 30)
+                ),
+                new MailNotifier(
+                    (string) ($mail['host'] ?? ''),
+                    (int) ($mail['port'] ?? 587),
+                    (string) ($mail['user'] ?? ''),
+                    (string) ($mail['password'] ?? ''),
+                    (string) ($mail['from'] ?? ''),
+                    is_array($mail['to'] ?? null) ? $mail['to'] : [],
+                    (string) ($mail['secure'] ?? 'tls')
                 )
             );
 

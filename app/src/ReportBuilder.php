@@ -95,6 +95,17 @@ final class ReportBuilder
         return rtrim(implode(PHP_EOL, $lines)) . PHP_EOL;
     }
 
+    public function renderSummary(string $summary, DateTimeImmutable $today): string
+    {
+        return sprintf(
+            "Notion Daily Report (%s)%s%s%s",
+            $today->setTimezone($this->timezone)->format('Y-m-d'),
+            PHP_EOL . PHP_EOL,
+            trim($summary),
+            PHP_EOL
+        );
+    }
+
     /**
      * @param array<string, mixed> $item
      */

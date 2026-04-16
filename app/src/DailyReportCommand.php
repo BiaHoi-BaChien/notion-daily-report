@@ -24,7 +24,9 @@ final class DailyReportCommand
         private readonly Logger $logger,
         private readonly DateTimeZone $timezone,
         private readonly bool $writeErrors = true,
-        private readonly ?SlackNotifierInterface $slackNotifier = null
+        private readonly ?SlackNotifierInterface $slackNotifier = null,
+        private readonly ?OpenAIClientInterface $openAIClient = null,
+        private readonly ?MailNotifierInterface $mailNotifier = null
     ) {
     }
 
@@ -67,7 +69,8 @@ final class DailyReportCommand
             }
 
             $classified = $this->reportBuilder->classifyAndSort($items, $today);
-            $report = $this->reportBuilder->renderConsole($classified, $today);
+            $fallbackReport = $this->reportBuilder->renderConsole($classified, $today);
+            $apiSendCount = $this->shouldSummarizeWithOpenAI($classified) ? min(100, count($classified)) : 0;
 
             $this->logger->info('daily_report_filtered', [
                 'source_count' => count($sources),
@@ -75,11 +78,13 @@ final class DailyReportCommand
                 'failed_source_count' => $failedSources,
                 'fetched_count' => $fetchedCount,
                 'filtered_count' => count($classified),
-                'api_send_count' => 0,
+                'api_send_count' => $apiSendCount,
             ]);
 
+            $report = $this->buildNotificationReport($classified, $fallbackReport, $today);
             echo $report;
             $this->sendSlackReport($report);
+            $this->sendMailReport($report, $today);
 
             $this->logger->info('daily_report_end', [
                 'ended_at' => (new DateTimeImmutable('now', $this->timezone))->format(DATE_ATOM),
@@ -221,5 +226,80 @@ final class DailyReportCommand
 
         $this->slackNotifier->send($report);
         $this->logger->info('slack_notification_sent');
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     */
+    private function buildNotificationReport(array $items, string $fallbackReport, DateTimeImmutable $today): string
+    {
+        if (!$this->shouldSummarizeWithOpenAI($items)) {
+            $this->logger->info('openai_summary_skipped', [
+                'reason' => $items === [] ? 'No filtered items.' : 'OPENAI_API_KEY is not configured.',
+            ]);
+            return $fallbackReport;
+        }
+
+        $payload = $this->openAIPayload($items);
+        $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $this->logger->info('openai_payload_prepared', [
+            'api_send_count' => count($payload),
+            'json_size_bytes' => $payloadJson === false ? 0 : strlen($payloadJson),
+        ]);
+
+        $summary = $this->openAIClient?->summarize($items) ?? '';
+        $this->logger->info('openai_summary_complete', [
+            'summary_length_bytes' => strlen($summary),
+        ]);
+
+        return $this->reportBuilder->renderSummary($summary, $today);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     */
+    private function shouldSummarizeWithOpenAI(array $items): bool
+    {
+        return $items !== []
+            && $this->openAIClient !== null
+            && $this->openAIClient->isConfigured();
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function openAIPayload(array $items): array
+    {
+        $payload = [];
+        foreach (array_slice($items, 0, 100) as $item) {
+            $payload[] = [
+                'source_name' => $item['source_name'] ?? null,
+                'source_role' => $item['source_role'] ?? null,
+                'title' => $item['title'] ?? null,
+                'date' => $item['date'] ?? null,
+                'status' => $item['status'] ?? null,
+                'classification' => $item['classification'] ?? null,
+                'url' => $item['url'] ?? null,
+            ];
+        }
+
+        return $payload;
+    }
+
+    private function sendMailReport(string $report, DateTimeImmutable $today): void
+    {
+        if ($this->mailNotifier === null || !$this->mailNotifier->isConfigured()) {
+            $this->logger->info('mail_notification_skipped', [
+                'reason' => 'SMTP_HOST, MAIL_FROM, or MAIL_TO is not configured.',
+            ]);
+            return;
+        }
+
+        $this->mailNotifier->send(
+            sprintf('Notion Daily Report %s', $today->setTimezone($this->timezone)->format('Y-m-d')),
+            $report
+        );
+        $this->logger->info('mail_notification_sent');
     }
 }

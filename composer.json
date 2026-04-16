@@ -1,11 +1,12 @@
 {
   "name": "sugi/notion-daily-report",
-  "description": "PHP CLI batch for extracting near-term Notion items into a daily report and Slack notification.",
+  "description": "PHP CLI batch for extracting near-term Notion items into OpenAI-summarized Slack and email reports.",
   "license": "Apache-2.0",
   "type": "project",
   "require": {
     "php": "^8.1",
     "guzzlehttp/guzzle": "^7.9",
+    "phpmailer/phpmailer": "^6.10",
     "vlucas/phpdotenv": "^5.6"
   },
   "require-dev": {

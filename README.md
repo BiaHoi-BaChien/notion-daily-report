@@ -1,6 +1,6 @@
 # notion-daily-report
 
-PHP 8.1+ CLI batch that reads near-term Notion data-source items, filters them in PHP, classifies them, prints a Japanese daily report, and can post the same report to Slack. OpenAI summarization and email are intentionally left for later phases.
+PHP 8.1+ CLI batch that reads near-term Notion data-source items, filters them in PHP, summarizes them with OpenAI when configured, prints a Japanese daily report, and can post the same report to Slack and email.
 
 ## Requirements
 
@@ -25,6 +25,15 @@ NOTION_VERSION=2026-03-11
 NOTION_DATA_SOURCE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 NOTION_DATA_SOURCE_IDS=
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-5.2
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=tls
+SMTP_USER=user@example.com
+SMTP_PASSWORD=password
+MAIL_FROM=user@example.com
+MAIL_TO=recipient1@example.com,recipient2@example.com
 ```
 
 For API versions `2025-09-03` and newer, Notion distinguishes between database IDs and data-source IDs. Prefer the data-source ID from Notion's "Copy data source ID" action. If you provide a database ID, this script can resolve it automatically only when that database has exactly one data source.
@@ -71,7 +80,11 @@ Update `app/config/app.php` if your Notion property names differ from the defaul
 
 Add more entries to the `sources` array to process multiple Notion sources in one run. Each source is fetched, extracted, and filtered independently; if one source fails, the batch logs that failure and continues with the remaining enabled sources.
 
-`SLACK_WEBHOOK_URL` is optional. When it is empty, the report is printed only to stdout and the Slack step is logged as skipped. When it is set, the exact report text is posted to Slack using the incoming webhook.
+`OPENAI_API_KEY` is optional. When it is set, up to 100 filtered items are sent to OpenAI's Responses API as compact JSON and the generated Japanese summary becomes the notification body. When it is empty, the batch uses the local classified report.
+
+`SLACK_WEBHOOK_URL` is optional. When it is empty, the Slack step is logged as skipped. When it is set, the final report text is posted to Slack using the incoming webhook.
+
+SMTP settings are optional. Mail is sent only when `SMTP_HOST`, `MAIL_FROM`, and `MAIL_TO` are configured. `MAIL_TO` accepts comma-separated recipients.
 
 ## Usage
 
@@ -87,7 +100,7 @@ Run deterministically for a specific date:
 php app/batch/daily_report.php --date=2026-04-16
 ```
 
-The report is printed to stdout and, when configured, sent to Slack. Logs are written to `app/logs/daily_report.log` by default.
+The report is printed to stdout and, when configured, sent to Slack and email. Logs are written to `app/logs/daily_report.log` by default.
 
 ## Hostinger Cron Example
 
@@ -108,7 +121,8 @@ Keep `.env` outside any public web root whenever possible.
 - Extracts title, date, status/select, URL, and last edited time
 - Filters in PHP by date window and excluded statuses
 - Classifies items as `overdue`, `today`, `upcoming`, or `recent_past`
-- Prints a Japanese CLI report, optionally posts it to Slack, and writes JSON-line logs
+- Sends up to 100 compact items to OpenAI for a Japanese action summary when configured
+- Prints the final report, optionally posts it to Slack, optionally sends it by email, and writes JSON-line logs
 
 ## Tests
 
@@ -116,10 +130,8 @@ Keep `.env` outside any public web root whenever possible.
 composer test
 ```
 
-The test suite covers date filtering, Notion property extraction, Notion client request behavior, Slack notification, and CLI orchestration with stubbed clients.
+The test suite covers config mapping, date filtering, Notion property extraction, Notion client request behavior, OpenAI summarization, Slack notification, email configuration, and CLI orchestration with stubbed clients.
 
 ## Phase 3+ Roadmap
 
-- Send the same report by SMTP email
-- Add OpenAI summarization with a max 100-item payload
 - Harden source-level continuation and operational logging

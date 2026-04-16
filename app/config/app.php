@@ -55,5 +55,19 @@ return [
         'webhook_url' => $env('SLACK_WEBHOOK_URL', ''),
         'timeout' => (int) $env('SLACK_TIMEOUT', 10),
     ],
+    'openai' => [
+        'api_key' => $env('OPENAI_API_KEY', ''),
+        'model' => $env('OPENAI_MODEL', 'gpt-5.2'),
+        'timeout' => (int) $env('OPENAI_TIMEOUT', 30),
+    ],
+    'mail' => [
+        'host' => $env('SMTP_HOST', ''),
+        'port' => (int) $env('SMTP_PORT', 587),
+        'secure' => $env('SMTP_SECURE', 'tls'),
+        'user' => $env('SMTP_USER', ''),
+        'password' => $env('SMTP_PASSWORD', ''),
+        'from' => $env('MAIL_FROM', ''),
+        'to' => \App\MailNotifier::parseRecipients((string) $env('MAIL_TO', '')),
+    ],
     'sources' => $sources,
 ];

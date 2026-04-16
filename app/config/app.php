@@ -30,32 +30,48 @@ if ($dataSourceIds === []) {
     }
 }
 
-$baseSource = [
-    'enabled' => true,
-    'name' => 'ToDo',
-    'role' => '今日やるべき作業の確認',
-    'date_property' => 'いつまでに',
-    'status_property' => 'ステータス',
-    'lookback_days' => 1,
-    'lookahead_days' => 3,
-    'exclude_statuses' => ['完了', 'いつかやる'],
-    'filter_property_ids' => [],
+$baseSources = [
+    [
+        'enabled' => true,
+        'name' => 'ToDo',
+        'role' => '今日やるべき作業の確認',
+        'date_property' => 'いつまでに',
+        'status_property' => 'ステータス',
+        'lookback_days' => 1,
+        'lookahead_days' => 3,
+        'exclude_statuses' => ['完了', 'いつかやる'],
+        'filter_property_ids' => [],
+    ],
+    [
+        'enabled' => true,
+        'name' => '会議予定',
+        'role' => '直近の会議準備',
+        'date_property' => '開始日',
+        'status_property' => null,
+        'lookback_days' => 0,
+        'lookahead_days' => 7,
+        'exclude_statuses' => [],
+        'filter_property_ids' => [],
+    ],
 ];
 
+if (count($dataSourceIds) > count($baseSources)) {
+    throw new UnexpectedValueException(sprintf(
+        'NOTION_DATA_SOURCE_IDS has %d IDs, but app/config/app.php defines only %d base sources.',
+        count($dataSourceIds),
+        count($baseSources)
+    ));
+}
+
 $sources = array_map(
-    static function (string $dataSourceId, int $index) use ($baseSource): array {
+    static function (string $dataSourceId, array $baseSource): array {
         return array_merge($baseSource, [
-            'name' => sprintf('ToDo %d', $index + 1),
             'data_source_id' => $dataSourceId,
         ]);
     },
     $dataSourceIds,
-    array_keys($dataSourceIds)
+    array_slice($baseSources, 0, count($dataSourceIds))
 );
-
-if (count($sources) === 1) {
-    $sources[0]['name'] = 'ToDo';
-}
 
 return [
     'timezone' => $env('APP_TIMEZONE', 'Asia/Saigon'),

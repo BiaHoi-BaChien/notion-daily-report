@@ -57,7 +57,7 @@ return [
     ],
     'openai' => [
         'api_key' => $env('OPENAI_API_KEY', ''),
-        'model' => $env('OPENAI_MODEL', 'gpt-5.2'),
+        'model' => $env('OPENAI_MODEL', 'gpt-4.1-mini'),
         'timeout' => (int) $env('OPENAI_TIMEOUT', 30),
     ],
     'mail' => [

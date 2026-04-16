@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App;
 
 use App\Exception\ConfigException;
+use App\Exception\OpenAIException;
 use App\Exception\PropertyExtractionException;
 use DateTimeImmutable;
 use DateTimeZone;
@@ -247,7 +248,16 @@ final class DailyReportCommand
             'json_size_bytes' => $payloadJson === false ? 0 : strlen($payloadJson),
         ]);
 
-        $summary = $this->openAIClient?->summarize($items) ?? '';
+        try {
+            $summary = $this->openAIClient?->summarize($items) ?? '';
+        } catch (OpenAIException $exception) {
+            $this->logger->error('openai_summary_failed', [
+                'error' => $exception->getMessage(),
+                'fallback' => 'local_report',
+            ]);
+            return $fallbackReport;
+        }
+
         $this->logger->info('openai_summary_complete', [
             'summary_length_bytes' => strlen($summary),
         ]);

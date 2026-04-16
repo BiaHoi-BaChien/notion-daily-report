@@ -43,7 +43,7 @@ final class Bootstrap
                 ),
                 new OpenAIClient(
                     (string) ($openai['api_key'] ?? ''),
-                    (string) ($openai['model'] ?? 'gpt-5.2'),
+                    (string) ($openai['model'] ?? 'gpt-4.1-mini'),
                     (int) ($openai['timeout'] ?? 30)
                 ),
                 new MailNotifier(

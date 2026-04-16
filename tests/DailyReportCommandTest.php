@@ -6,6 +6,7 @@ namespace Tests;
 
 use App\DailyReportCommand;
 use App\DateFilter;
+use App\Exception\OpenAIException;
 use App\Logger;
 use App\NotionClientInterface;
 use App\OpenAIClientInterface;
@@ -179,6 +180,36 @@ final class DailyReportCommandTest extends TestCase
         self::assertSame('Today task', $openai->receivedItems[0]['title']);
     }
 
+    public function testFallsBackToLocalReportWhenOpenAISummaryFails(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+
+        $command = new DailyReportCommand(
+            $this->config(),
+            new StubNotionClient([
+                $this->page('Today task', '2026-04-16', '未着手'),
+            ]),
+            new PropertyExtractor($timezone),
+            new DateFilter($timezone),
+            new ReportBuilder($timezone),
+            new Logger($logPath, $timezone),
+            $timezone,
+            false,
+            null,
+            new FailingOpenAIClient()
+        );
+
+        ob_start();
+        $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
+        $output = (string) ob_get_clean();
+
+        self::assertSame(0, $exitCode);
+        self::assertStringContainsString('Today task', $output);
+        self::assertStringContainsString('## 今日やること', $output);
+        self::assertStringContainsString('openai_summary_failed', (string) file_get_contents($logPath));
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -313,6 +344,19 @@ final class StubOpenAIClient implements OpenAIClientInterface
     {
         $this->receivedItems = $items;
         return $this->summary;
+    }
+}
+
+final class FailingOpenAIClient implements OpenAIClientInterface
+{
+    public function isConfigured(): bool
+    {
+        return true;
+    }
+
+    public function summarize(array $items): string
+    {
+        throw new OpenAIException('OpenAI model is not available.');
     }
 }
 

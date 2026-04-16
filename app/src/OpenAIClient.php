@@ -8,6 +8,7 @@ use App\Exception\OpenAIException;
 use GuzzleHttp\Client;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\Exception\RequestException;
 
 final class OpenAIClient implements OpenAIClientInterface
 {
@@ -51,6 +52,8 @@ final class OpenAIClient implements OpenAIClientInterface
                     'input' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 ],
             ]);
+        } catch (RequestException $exception) {
+            throw new OpenAIException('OpenAI API request failed: ' . $this->requestErrorMessage($exception), 0, $exception);
         } catch (GuzzleException $exception) {
             throw new OpenAIException('OpenAI API request failed: ' . $exception->getMessage(), 0, $exception);
         }
@@ -126,5 +129,20 @@ final class OpenAIClient implements OpenAIClientInterface
         }
 
         return trim(implode("\n", $parts));
+    }
+
+    private function requestErrorMessage(RequestException $exception): string
+    {
+        $response = $exception->getResponse();
+        if ($response === null) {
+            return $exception->getMessage();
+        }
+
+        $decoded = json_decode((string) $response->getBody(), true);
+        $message = is_array($decoded) && isset($decoded['error']['message']) && is_string($decoded['error']['message'])
+            ? $decoded['error']['message']
+            : trim((string) $response->getBody());
+
+        return sprintf('HTTP %d: %s', $response->getStatusCode(), $message);
     }
 }

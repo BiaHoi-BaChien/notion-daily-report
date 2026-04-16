@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use App\Exception\OpenAIException;
 use App\OpenAIClient;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
@@ -66,5 +67,28 @@ final class OpenAIClientTest extends TestCase
         );
 
         self::assertCount(100, $client->buildPayload($items));
+    }
+
+    public function testRequestErrorIncludesResponseMessage(): void
+    {
+        $mock = new MockHandler([
+            new Response(403, [], json_encode([
+                'error' => [
+                    'message' => 'Project does not have access to model gpt-5.2',
+                ],
+            ])),
+        ]);
+        $httpClient = new Client([
+            'base_uri' => 'https://api.openai.com',
+            'handler' => HandlerStack::create($mock),
+        ]);
+
+        $client = new OpenAIClient('sk-test', 'gpt-5.2', 30, $httpClient);
+
+        $this->expectException(OpenAIException::class);
+        $this->expectExceptionMessage('HTTP 403');
+        $this->expectExceptionMessage('does not have access to model');
+
+        $client->summarize([['title' => 'Task']]);
     }
 }

@@ -26,7 +26,7 @@ NOTION_DATA_SOURCE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 NOTION_DATA_SOURCE_IDS=
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-5.2
+OPENAI_MODEL=gpt-4.1-mini
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_SECURE=tls
@@ -81,6 +81,8 @@ Update `app/config/app.php` if your Notion property names differ from the defaul
 Add more entries to the `sources` array to process multiple Notion sources in one run. Each source is fetched, extracted, and filtered independently; if one source fails, the batch logs that failure and continues with the remaining enabled sources.
 
 `OPENAI_API_KEY` is optional. When it is set, up to 100 filtered items are sent to OpenAI's Responses API as compact JSON and the generated Japanese summary becomes the notification body. When it is empty, the batch uses the local classified report.
+
+If your OpenAI project does not have access to the configured `OPENAI_MODEL`, set this to a model available in your project. `gpt-4.1-mini` supports the Responses API and is the default in this project.
 
 `SLACK_WEBHOOK_URL` is optional. When it is empty, the Slack step is logged as skipped. When it is set, the final report text is posted to Slack using the incoming webhook.
 

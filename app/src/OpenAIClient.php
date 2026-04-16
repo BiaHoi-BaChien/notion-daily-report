@@ -20,7 +20,8 @@ final class OpenAIClient implements OpenAIClientInterface
         private readonly string $apiKey,
         private readonly string $model,
         int $timeout,
-        ?ClientInterface $client = null
+        ?ClientInterface $client = null,
+        private readonly array $modelCandidates = []
     ) {
         $this->client = $client ?? new Client([
             'base_uri' => self::BASE_URI,
@@ -40,6 +41,23 @@ final class OpenAIClient implements OpenAIClientInterface
         }
 
         $payload = $this->buildPayload($items);
+        $lastException = null;
+        foreach ($this->modelsToTry() as $model) {
+            try {
+                return $this->createSummary($payload, $model);
+            } catch (OpenAIException $exception) {
+                $lastException = $exception;
+            }
+        }
+
+        throw $lastException ?? new OpenAIException('No OpenAI model candidates are configured.');
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $payload
+     */
+    private function createSummary(array $payload, string $model): string
+    {
         try {
             $response = $this->client->request('POST', '/v1/responses', [
                 'headers' => [
@@ -47,7 +65,7 @@ final class OpenAIClient implements OpenAIClientInterface
                     'Content-Type' => 'application/json',
                 ],
                 'json' => [
-                    'model' => $this->model,
+                    'model' => $model,
                     'instructions' => $this->instructions(),
                     'input' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                 ],
@@ -69,6 +87,24 @@ final class OpenAIClient implements OpenAIClientInterface
         }
 
         return $text;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function modelsToTry(): array
+    {
+        $model = trim($this->model);
+        if ($model !== '' && strtolower($model) !== 'auto') {
+            return [$model];
+        }
+
+        $candidates = array_values(array_filter(
+            array_map('strval', $this->modelCandidates),
+            static fn (string $candidate): bool => trim($candidate) !== ''
+        ));
+
+        return $candidates === [] ? ['gpt-4o-mini', 'gpt-4.1-mini', 'gpt-4o'] : $candidates;
     }
 
     /**

@@ -69,6 +69,45 @@ final class OpenAIClientTest extends TestCase
         self::assertCount(100, $client->buildPayload($items));
     }
 
+    public function testAutoModelTriesCandidatesUntilOneSucceeds(): void
+    {
+        $history = [];
+        $mock = new MockHandler([
+            new Response(403, [], json_encode([
+                'error' => [
+                    'message' => 'Project does not have access to model first-model',
+                ],
+            ])),
+            new Response(200, [], json_encode([
+                'output_text' => 'summary from second model',
+            ])),
+        ]);
+
+        $stack = HandlerStack::create($mock);
+        $stack->push(Middleware::history($history));
+        $httpClient = new Client([
+            'base_uri' => 'https://api.openai.com',
+            'handler' => $stack,
+        ]);
+
+        $client = new OpenAIClient('sk-test', 'auto', 30, $httpClient, ['first-model', 'second-model']);
+
+        self::assertSame('summary from second model', $client->summarize([['title' => 'Task']]));
+        self::assertCount(2, $history);
+
+        $firstBody = json_decode((string) $history[0]['request']->getBody(), true);
+        $secondBody = json_decode((string) $history[1]['request']->getBody(), true);
+        self::assertSame('first-model', $firstBody['model']);
+        self::assertSame('second-model', $secondBody['model']);
+    }
+
+    public function testBlankModelUsesDefaultAutoCandidates(): void
+    {
+        $client = new OpenAIClient('sk-test', '', 30);
+
+        self::assertSame(['gpt-4o-mini', 'gpt-4.1-mini', 'gpt-4o'], $client->modelsToTry());
+    }
+
     public function testRequestErrorIncludesResponseMessage(): void
     {
         $mock = new MockHandler([

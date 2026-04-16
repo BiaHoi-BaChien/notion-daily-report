@@ -43,8 +43,10 @@ final class Bootstrap
                 ),
                 new OpenAIClient(
                     (string) ($openai['api_key'] ?? ''),
-                    (string) ($openai['model'] ?? 'gpt-4.1-mini'),
-                    (int) ($openai['timeout'] ?? 30)
+                    (string) ($openai['model'] ?? 'auto'),
+                    (int) ($openai['timeout'] ?? 30),
+                    null,
+                    is_array($openai['model_candidates'] ?? null) ? $openai['model_candidates'] : []
                 ),
                 new MailNotifier(
                     (string) ($mail['host'] ?? ''),

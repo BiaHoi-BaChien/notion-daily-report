@@ -53,6 +53,14 @@ final class ConfigTest extends TestCase
         );
     }
 
+    public function testSplitsOpenAIModelCandidates(): void
+    {
+        self::assertSame(
+            ['gpt-4o-mini', 'gpt-4.1-mini', 'gpt-4o'],
+            SourceConfigBuilder::splitCsv(' gpt-4o-mini, gpt-4.1-mini,,gpt-4o ')
+        );
+    }
+
     public function testTooManyDataSourceIdsRequiresMatchingBaseSource(): void
     {
         $this->expectException(\UnexpectedValueException::class);

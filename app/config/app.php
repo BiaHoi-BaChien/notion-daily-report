@@ -57,7 +57,8 @@ return [
     ],
     'openai' => [
         'api_key' => $env('OPENAI_API_KEY', ''),
-        'model' => $env('OPENAI_MODEL', 'gpt-4.1-mini'),
+        'model' => $env('OPENAI_MODEL', 'auto'),
+        'model_candidates' => \App\SourceConfigBuilder::splitCsv((string) $env('OPENAI_MODEL_CANDIDATES', 'gpt-4o-mini,gpt-4.1-mini,gpt-4o')),
         'timeout' => (int) $env('OPENAI_TIMEOUT', 30),
     ],
     'mail' => [

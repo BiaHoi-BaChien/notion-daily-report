@@ -26,7 +26,8 @@ NOTION_DATA_SOURCE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 NOTION_DATA_SOURCE_IDS=
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4.1-mini
+OPENAI_MODEL=auto
+OPENAI_MODEL_CANDIDATES=gpt-4o-mini,gpt-4.1-mini,gpt-4o
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_SECURE=tls
@@ -82,7 +83,7 @@ Add more entries to the `sources` array to process multiple Notion sources in on
 
 `OPENAI_API_KEY` is optional. When it is set, up to 100 filtered items are sent to OpenAI's Responses API as compact JSON and the generated Japanese summary becomes the notification body. When it is empty, the batch uses the local classified report.
 
-If your OpenAI project does not have access to the configured `OPENAI_MODEL`, set this to a model available in your project. `gpt-4.1-mini` supports the Responses API and is the default in this project.
+The OpenAI API requires a model in each request; there is no server-side `AUTO` model. This app supports an app-level `OPENAI_MODEL=auto`, which tries `OPENAI_MODEL_CANDIDATES` from left to right and falls back to the local classified report if none are available. You can also set `OPENAI_MODEL` to one exact model available in your project.
 
 `SLACK_WEBHOOK_URL` is optional. When it is empty, the Slack step is logged as skipped. When it is set, the final report text is posted to Slack using the incoming webhook.
 

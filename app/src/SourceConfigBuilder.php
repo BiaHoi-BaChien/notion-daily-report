@@ -49,7 +49,7 @@ final class SourceConfigBuilder
     /**
      * @return array<int, string>
      */
-    private static function splitCsv(mixed $value): array
+    public static function splitCsv(mixed $value): array
     {
         if (!is_string($value) || trim($value) === '') {
             return [];

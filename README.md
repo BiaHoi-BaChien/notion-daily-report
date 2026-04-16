@@ -23,10 +23,19 @@ APP_TIMEZONE=Asia/Saigon
 NOTION_API_KEY=secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 NOTION_VERSION=2026-03-11
 NOTION_DATA_SOURCE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+NOTION_DATA_SOURCE_IDS=
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 ```
 
 For API versions `2025-09-03` and newer, Notion distinguishes between database IDs and data-source IDs. Prefer the data-source ID from Notion's "Copy data source ID" action. If you provide a database ID, this script can resolve it automatically only when that database has exactly one data source.
+
+Use `NOTION_DATA_SOURCE_IDS` when the same property settings should be applied to multiple data sources:
+
+```dotenv
+NOTION_DATA_SOURCE_IDS=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx,yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+```
+
+When `NOTION_DATA_SOURCE_IDS` is set, it takes precedence over `NOTION_DATA_SOURCE_ID`. Generated source names become `ToDo 1`, `ToDo 2`, and so on. Leave `NOTION_DATA_SOURCE_IDS` empty when you only need the single-source setting.
 
 Update `app/config/app.php` if your Notion property names differ from the defaults:
 

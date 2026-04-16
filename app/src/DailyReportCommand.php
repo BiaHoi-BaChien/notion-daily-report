@@ -23,7 +23,8 @@ final class DailyReportCommand
         private readonly ReportBuilder $reportBuilder,
         private readonly Logger $logger,
         private readonly DateTimeZone $timezone,
-        private readonly bool $writeErrors = true
+        private readonly bool $writeErrors = true,
+        private readonly ?SlackNotifierInterface $slackNotifier = null
     ) {
     }
 
@@ -40,41 +41,45 @@ final class DailyReportCommand
 
         try {
             $today = $this->resolveToday($argv);
-            $source = $this->firstEnabledSource();
-            $this->validateSource($source);
-
-            $pages = $this->notionClient->queryDataSource(
-                (string) $source['data_source_id'],
-                $source['filter_property_ids'] ?? []
-            );
-            $this->logger->info('notion_fetch_complete', [
-                'source' => $source['name'],
-                'fetched_count' => count($pages),
-            ]);
-
+            $sources = $this->enabledSources();
             $items = [];
-            foreach ($pages as $page) {
+            $successfulSources = 0;
+            $failedSources = 0;
+            $fetchedCount = 0;
+
+            foreach ($sources as $source) {
                 try {
-                    $items[] = $this->propertyExtractor->extract($page, $source);
-                } catch (PropertyExtractionException $exception) {
-                    $this->logger->error('property_extraction_failed', [
-                        'source' => $source['name'],
-                        'page_id' => $page['id'] ?? null,
+                    $sourceItems = $this->processSource($source, $today);
+                    $items = array_merge($items, $sourceItems['items']);
+                    $fetchedCount += $sourceItems['fetched_count'];
+                    $successfulSources++;
+                } catch (Throwable $exception) {
+                    $failedSources++;
+                    $this->logger->error('source_failed', [
+                        'source' => $source['name'] ?? null,
                         'error' => $exception->getMessage(),
                     ]);
                 }
             }
 
-            $filtered = $this->dateFilter->filter($items, $source, $today);
-            $classified = $this->reportBuilder->classifyAndSort($filtered, $today);
+            if ($successfulSources === 0) {
+                throw new ConfigException('All enabled sources failed.');
+            }
+
+            $classified = $this->reportBuilder->classifyAndSort($items, $today);
+            $report = $this->reportBuilder->renderConsole($classified, $today);
 
             $this->logger->info('daily_report_filtered', [
-                'source' => $source['name'],
+                'source_count' => count($sources),
+                'successful_source_count' => $successfulSources,
+                'failed_source_count' => $failedSources,
+                'fetched_count' => $fetchedCount,
                 'filtered_count' => count($classified),
                 'api_send_count' => 0,
             ]);
 
-            echo $this->reportBuilder->renderConsole($classified, $today);
+            echo $report;
+            $this->sendSlackReport($report);
 
             $this->logger->info('daily_report_end', [
                 'ended_at' => (new DateTimeImmutable('now', $this->timezone))->format(DATE_ATOM),
@@ -121,17 +126,68 @@ final class DailyReportCommand
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<int, array<string, mixed>>
      */
-    private function firstEnabledSource(): array
+    private function enabledSources(): array
     {
+        $enabledSources = [];
         foreach ($this->config['sources'] as $source) {
             if (($source['enabled'] ?? true) !== false) {
-                return $source;
+                $enabledSources[] = $source;
             }
         }
 
-        throw new ConfigException('No enabled source found.');
+        if ($enabledSources === []) {
+            throw new ConfigException('No enabled source found.');
+        }
+
+        return $enabledSources;
+    }
+
+    /**
+     * @param array<string, mixed> $source
+     * @return array{items: array<int, array<string, mixed>>, fetched_count: int}
+     */
+    private function processSource(array $source, DateTimeImmutable $today): array
+    {
+        $this->validateSource($source);
+
+        $pages = $this->notionClient->queryDataSource(
+            (string) $source['data_source_id'],
+            $source['filter_property_ids'] ?? []
+        );
+        $this->logger->info('notion_fetch_complete', [
+            'source' => $source['name'],
+            'fetched_count' => count($pages),
+        ]);
+
+        $items = [];
+        $extractionErrorCount = 0;
+        foreach ($pages as $page) {
+            try {
+                $items[] = $this->propertyExtractor->extract($page, $source);
+            } catch (PropertyExtractionException $exception) {
+                $extractionErrorCount++;
+                $this->logger->error('property_extraction_failed', [
+                    'source' => $source['name'],
+                    'page_id' => $page['id'] ?? null,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        }
+
+        $filtered = $this->dateFilter->filter($items, $source, $today);
+        $this->logger->info('source_filtered', [
+            'source' => $source['name'],
+            'extracted_count' => count($items),
+            'extraction_error_count' => $extractionErrorCount,
+            'filtered_count' => count($filtered),
+        ]);
+
+        return [
+            'items' => $filtered,
+            'fetched_count' => count($pages),
+        ];
     }
 
     /**
@@ -152,5 +208,18 @@ final class DailyReportCommand
         if (!is_array($source['exclude_statuses'])) {
             throw new ConfigException(sprintf('Source "%s" exclude_statuses must be an array.', $source['name']));
         }
+    }
+
+    private function sendSlackReport(string $report): void
+    {
+        if ($this->slackNotifier === null || !$this->slackNotifier->isConfigured()) {
+            $this->logger->info('slack_notification_skipped', [
+                'reason' => 'SLACK_WEBHOOK_URL is not configured.',
+            ]);
+            return;
+        }
+
+        $this->slackNotifier->send($report);
+        $this->logger->info('slack_notification_sent');
     }
 }

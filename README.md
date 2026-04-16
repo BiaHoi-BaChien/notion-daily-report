@@ -1,13 +1,13 @@
 # notion-daily-report
 
-PHP 8.1+ CLI batch that reads near-term Notion data-source items, filters them in PHP, classifies them, and prints a Japanese daily report. Phase 1 intentionally stops at CLI output so the Notion extraction and date rules can be validated before adding Slack, OpenAI, and email.
+PHP 8.1+ CLI batch that reads near-term Notion data-source items, filters them in PHP, classifies them, prints a Japanese daily report, and can post the same report to Slack. OpenAI summarization and email are intentionally left for later phases.
 
 ## Requirements
 
 - PHP 8.1 or newer
 - Composer
 - A Notion integration token
-- A Notion data source shared with that integration
+- A Notion data source, or a single-data-source database, shared with that integration
 
 ## Setup
 
@@ -23,7 +23,10 @@ APP_TIMEZONE=Asia/Saigon
 NOTION_API_KEY=secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 NOTION_VERSION=2026-03-11
 NOTION_DATA_SOURCE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 ```
+
+For API versions `2025-09-03` and newer, Notion distinguishes between database IDs and data-source IDs. Prefer the data-source ID from Notion's "Copy data source ID" action. If you provide a database ID, this script can resolve it automatically only when that database has exactly one data source.
 
 Update `app/config/app.php` if your Notion property names differ from the defaults:
 
@@ -31,6 +34,10 @@ Update `app/config/app.php` if your Notion property names differ from the defaul
 - `status_property`: status or select property used for exclusion; set to `null` for sources without status
 - `exclude_statuses`: statuses removed before reporting
 - `lookback_days` / `lookahead_days`: date window around today
+
+Add more entries to the `sources` array to process multiple Notion sources in one run. Each source is fetched, extracted, and filtered independently; if one source fails, the batch logs that failure and continues with the remaining enabled sources.
+
+`SLACK_WEBHOOK_URL` is optional. When it is empty, the report is printed only to stdout and the Slack step is logged as skipped. When it is set, the exact report text is posted to Slack using the incoming webhook.
 
 ## Usage
 
@@ -46,7 +53,7 @@ Run deterministically for a specific date:
 php app/batch/daily_report.php --date=2026-04-16
 ```
 
-The report is printed to stdout. Logs are written to `app/logs/daily_report.log` by default.
+The report is printed to stdout and, when configured, sent to Slack. Logs are written to `app/logs/daily_report.log` by default.
 
 ## Hostinger Cron Example
 
@@ -58,14 +65,16 @@ Hostinger cron is UTC-based, so choose the UTC trigger time that corresponds to 
 
 Keep `.env` outside any public web root whenever possible.
 
-## What Phase 1 Does
+## What This Batch Does
 
 - Queries `POST /v1/data_sources/{data_source_id}/query` with `Notion-Version: 2026-03-11`
-- Paginates through all results
+- Resolves a configured single-source database ID to its child data-source ID when needed
+- Processes all enabled configured sources
+- Paginates through all results per source
 - Extracts title, date, status/select, URL, and last edited time
 - Filters in PHP by date window and excluded statuses
 - Classifies items as `overdue`, `today`, `upcoming`, or `recent_past`
-- Prints a Japanese CLI report and writes JSON-line logs
+- Prints a Japanese CLI report, optionally posts it to Slack, and writes JSON-line logs
 
 ## Tests
 
@@ -73,12 +82,10 @@ Keep `.env` outside any public web root whenever possible.
 composer test
 ```
 
-The test suite covers date filtering, Notion property extraction, and the CLI orchestration with a stubbed Notion client.
+The test suite covers date filtering, Notion property extraction, Notion client request behavior, Slack notification, and CLI orchestration with stubbed clients.
 
-## Phase 2+ Roadmap
+## Phase 3+ Roadmap
 
-- Process multiple sources in one run
-- Post the report to Slack via webhook
 - Send the same report by SMTP email
 - Add OpenAI summarization with a max 100-item payload
 - Harden source-level continuation and operational logging

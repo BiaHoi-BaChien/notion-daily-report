@@ -77,11 +77,13 @@ final class ReportBuilder
 
             $lines[] = '## ' . $heading;
             foreach ($groupItems as $item) {
+                $source = ($item['source_name'] ?? null) ? sprintf(' [%s]', $item['source_name']) : '';
                 $status = ($item['status'] ?? null) ? sprintf(' / %s', $item['status']) : '';
                 $url = ($item['url'] ?? null) ? sprintf(' / %s', $item['url']) : '';
                 $lines[] = sprintf(
-                    '- [%s] %s%s%s',
+                    '- [%s]%s %s%s%s',
                     $item['date'] ?? '日付なし',
+                    $source,
                     $item['title'] ?? '無題',
                     $status,
                     $url

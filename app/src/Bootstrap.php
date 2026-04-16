@@ -20,6 +20,7 @@ final class Bootstrap
 
             $logger = new Logger(self::resolvePath($projectRoot, (string) $config['log_path']), $timezone);
             $notion = $config['notion'];
+            $slack = $config['slack'] ?? [];
 
             $command = new DailyReportCommand(
                 $config,
@@ -32,7 +33,12 @@ final class Bootstrap
                 new DateFilter($timezone),
                 new ReportBuilder($timezone),
                 $logger,
-                $timezone
+                $timezone,
+                true,
+                new SlackNotifier(
+                    (string) ($slack['webhook_url'] ?? ''),
+                    (int) ($slack['timeout'] ?? 10)
+                )
             );
 
             return $command->run($argv);

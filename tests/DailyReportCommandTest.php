@@ -10,8 +10,10 @@ use App\Logger;
 use App\NotionClientInterface;
 use App\PropertyExtractor;
 use App\ReportBuilder;
+use App\SlackNotifierInterface;
 use DateTimeZone;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 final class DailyReportCommandTest extends TestCase
 {
@@ -73,6 +75,71 @@ final class DailyReportCommandTest extends TestCase
         self::assertSame(1, $exitCode);
     }
 
+    public function testProcessesMultipleSourcesAndSendsSlackReport(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $slack = new StubSlackNotifier();
+
+        $command = new DailyReportCommand(
+            $this->multiSourceConfig(),
+            new StubNotionClient([
+                'source-1' => [
+                    $this->page('Today task', '2026-04-16', '未着手'),
+                ],
+                'source-2' => [
+                    $this->page('Meeting prep', '2026-04-18', null),
+                ],
+            ]),
+            new PropertyExtractor($timezone),
+            new DateFilter($timezone),
+            new ReportBuilder($timezone),
+            new Logger($logPath, $timezone),
+            $timezone,
+            false,
+            $slack
+        );
+
+        ob_start();
+        $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
+        $output = (string) ob_get_clean();
+
+        self::assertSame(0, $exitCode);
+        self::assertStringContainsString('[個人ToDo] Today task', $output);
+        self::assertStringContainsString('[会議予定] Meeting prep', $output);
+        self::assertSame($output, $slack->sentText);
+    }
+
+    public function testContinuesWhenOneSourceFails(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+
+        $command = new DailyReportCommand(
+            $this->multiSourceConfig(),
+            new StubNotionClient([
+                'source-1' => new RuntimeException('Source failed'),
+                'source-2' => [
+                    $this->page('Meeting prep', '2026-04-18', null),
+                ],
+            ]),
+            new PropertyExtractor($timezone),
+            new DateFilter($timezone),
+            new ReportBuilder($timezone),
+            new Logger($logPath, $timezone),
+            $timezone,
+            false
+        );
+
+        ob_start();
+        $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
+        $output = (string) ob_get_clean();
+
+        self::assertSame(0, $exitCode);
+        self::assertStringContainsString('Meeting prep', $output);
+        self::assertStringNotContainsString('Source failed', $output);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -94,6 +161,29 @@ final class DailyReportCommandTest extends TestCase
                 ],
             ],
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function multiSourceConfig(): array
+    {
+        $config = $this->config();
+        $config['sources'][0]['data_source_id'] = 'source-1';
+        $config['sources'][] = [
+            'enabled' => true,
+            'name' => '会議予定',
+            'role' => '直近の会議準備',
+            'data_source_id' => 'source-2',
+            'date_property' => '期限',
+            'status_property' => null,
+            'lookback_days' => 0,
+            'lookahead_days' => 7,
+            'exclude_statuses' => [],
+            'filter_property_ids' => [],
+        ];
+
+        return $config;
     }
 
     /**
@@ -136,6 +226,30 @@ final class StubNotionClient implements NotionClientInterface
 
     public function queryDataSource(string $dataSourceId, array $filterPropertyIds = []): array
     {
-        return $this->pages;
+        if (array_is_list($this->pages)) {
+            return $this->pages;
+        }
+
+        $result = $this->pages[$dataSourceId] ?? [];
+        if ($result instanceof RuntimeException) {
+            throw $result;
+        }
+
+        return $result;
+    }
+}
+
+final class StubSlackNotifier implements SlackNotifierInterface
+{
+    public ?string $sentText = null;
+
+    public function isConfigured(): bool
+    {
+        return true;
+    }
+
+    public function send(string $text): void
+    {
+        $this->sentText = $text;
     }
 }

@@ -57,6 +57,7 @@ $baseSources = [
         'role' => '今日以降1週間の予定の確認',
         'date_property' => 'Date',
         'status_property' => '',
+        'project_property' => 'Projects',
         'genre_property' => 'ジャンル',
         'lookback_days' => 0,
         'lookahead_days' => 7,

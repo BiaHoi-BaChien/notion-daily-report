@@ -14,6 +14,7 @@ use App\MailNotifierInterface;
 use App\PropertyExtractor;
 use App\ReportBuilder;
 use App\SlackNotifierInterface;
+use DateTimeImmutable;
 use DateTimeZone;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -261,6 +262,30 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringContainsString('2. 今日が期限の案件のタスク', $report);
         self::assertStringContainsString('楽天ペイ表示確認 | 楽天ペイV2', $report);
         self::assertStringNotContainsString('楽天ペイ表示確認 | その他', $report);
+    }
+
+    public function testDeterminesSourceTypeOnlyFromSourceName(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $today = new DateTimeImmutable('2026-04-17', $timezone);
+        $builder = new ReportBuilder($timezone);
+
+        $items = $builder->classifyAndSort([
+            $this->extractedItem('Exact todo', '2026-04-17', 'ToDo', 'unrelated role', '2026-04-17T09:00:00+07:00'),
+            $this->extractedItem('Role-only todo', '2026-04-17', '別ソース', '今日やるべき作業の確認', '2026-04-17T10:00:00+07:00'),
+            $this->extractedItem('Exact project task', '2026-04-17', '各案件のタスク', 'unrelated role', '2026-04-17'),
+            $this->extractedItem('Role-only project task', '2026-04-17', '別ソース', '各案件ごとのタスクの確認', '2026-04-17'),
+            $this->extractedItem('Role-only identity document', '2026-04-18', '別ソース', '期限切れが迫っている身分証明書の確認', '2026-04-18'),
+        ], $today);
+
+        $report = $builder->renderSchedule($items, $today);
+
+        self::assertStringContainsString('【09:00】Exact todo | その他', $report);
+        self::assertStringNotContainsString('Role-only todo', $report);
+        self::assertStringContainsString('Exact project task | その他', $report);
+        self::assertStringNotContainsString('Role-only project task', $report);
+        self::assertStringContainsString('【04/18】Role-only identity document | その他', $report);
+        self::assertStringNotContainsString('Role-only identity document | 身分証明書', $report);
     }
 
     public function testUsesOpenAISummaryForSlackAndMailWhenConfigured(): void
@@ -556,7 +581,7 @@ final class DailyReportCommandTest extends TestCase
             'sources' => [
                 [
                     'enabled' => true,
-                    'name' => '個人ToDo',
+                    'name' => 'ToDo',
                     'role' => '今日やるべき作業の確認',
                     'data_source_id' => 'source-id',
                     'date_property' => '期限',
@@ -838,6 +863,26 @@ final class DailyReportCommandTest extends TestCase
                     'status' => $status === null ? null : ['name' => $status],
                 ],
             ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function extractedItem(string $title, string $date, string $sourceName, string $sourceRole, string $dateStart): array
+    {
+        return [
+            'title' => $title,
+            'date' => $date,
+            'date_start' => $dateStart,
+            'date_has_time' => str_contains($dateStart, 'T'),
+            'date_end' => null,
+            'date_end_has_time' => false,
+            'status' => null,
+            'project' => '',
+            'genre' => '',
+            'source_name' => $sourceName,
+            'source_role' => $sourceRole,
         ];
     }
 

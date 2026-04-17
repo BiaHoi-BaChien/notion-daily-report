@@ -90,7 +90,7 @@ final class ReportBuilder
             if ($holidays !== []) {
                 foreach ($holidays as $holiday) {
                     $date = $this->dateForDisplay($holiday, 'm/d');
-                    $lines[] = sprintf('  【%s】 %s | %s', $date, $holiday['title'] ?? '無題', self::GENRE_HOLIDAY);
+                    $lines[] = sprintf('    【%s】 %s | %s', $date, $holiday['title'] ?? '無題', self::GENRE_HOLIDAY);
                 }
             }
 
@@ -386,8 +386,7 @@ final class ReportBuilder
      */
     private function isTodo(array $item): bool
     {
-        return ($item['source_name'] ?? null) === self::SOURCE_TODO
-            || str_contains((string) ($item['source_role'] ?? ''), '今日やるべき');
+        return ($item['source_name'] ?? null) === self::SOURCE_TODO;
     }
 
     /**
@@ -395,8 +394,7 @@ final class ReportBuilder
      */
     private function isProjectTask(array $item): bool
     {
-        return ($item['source_name'] ?? null) === self::SOURCE_PROJECT_TASK
-            || str_contains((string) ($item['source_role'] ?? ''), '各案件');
+        return ($item['source_name'] ?? null) === self::SOURCE_PROJECT_TASK;
     }
 
     /**
@@ -404,8 +402,7 @@ final class ReportBuilder
      */
     private function isCalendar(array $item): bool
     {
-        return ($item['source_name'] ?? null) === self::SOURCE_CALENDAR
-            || str_contains((string) ($item['source_role'] ?? ''), '予定');
+        return ($item['source_name'] ?? null) === self::SOURCE_CALENDAR;
     }
 
     /**
@@ -413,8 +410,7 @@ final class ReportBuilder
      */
     private function isIdentityDocument(array $item): bool
     {
-        return ($item['source_name'] ?? null) === self::SOURCE_IDENTITY_DOCUMENT
-            || str_contains((string) ($item['source_role'] ?? ''), '身分証明書');
+        return ($item['source_name'] ?? null) === self::SOURCE_IDENTITY_DOCUMENT;
     }
 
     /**

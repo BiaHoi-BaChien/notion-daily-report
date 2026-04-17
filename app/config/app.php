@@ -63,7 +63,6 @@ $baseSources = [
         'exclude_statuses' => [],
         'filter_property_ids' => [],
     ],
-
 ];
 
 $sources = \App\SourceConfigBuilder::buildSources($dataSourceIds, $baseSources);

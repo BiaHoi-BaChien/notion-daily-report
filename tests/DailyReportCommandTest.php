@@ -213,8 +213,8 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringContainsString('【04/20 10:00 - 11:00】MTG K&G | その他', $report);
         self::assertStringContainsString('【04/20 16:00】委員会活動 | 学校', $report);
         self::assertStringContainsString('4. その他トピックス', $report);
-        self::assertStringContainsString('  以下の通り祝日があります。', $report);
-        self::assertStringContainsString('    4月21日 ベトナム暦的吉日', $report);
+        self::assertStringNotContainsString('  以下の通り祝日があります。', $report);
+        self::assertStringContainsString('    【04/21】 ベトナム暦的吉日 | 祝日', $report);
         self::assertStringContainsString('  以下の身分証明書の有効期限が近づいています。', $report);
         self::assertStringContainsString('【05/01】在留カード | 身分証明書', $report);
         self::assertSame(1, substr_count($report, '在留カード'));

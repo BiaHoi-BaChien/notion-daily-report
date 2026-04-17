@@ -88,10 +88,9 @@ final class ReportBuilder
             $lines[] = '';
             $lines[] = '4. その他トピックス';
             if ($holidays !== []) {
-                $lines[] = '  以下の通り祝日があります。';
                 foreach ($holidays as $holiday) {
-                    $date = $this->dateForDisplay($holiday, 'n月j日');
-                    $lines[] = sprintf('    %s %s', $date, $holiday['title'] ?? '無題');
+                    $date = $this->dateForDisplay($holiday, 'm/d');
+                    $lines[] = sprintf('  【%s】 %s | %s', $date, $holiday['title'] ?? '無題', self::GENRE_HOLIDAY);
                 }
             }
 

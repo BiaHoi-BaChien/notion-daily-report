@@ -24,6 +24,7 @@ final class DailyReportCommandTest extends TestCase
     {
         $timezone = new DateTimeZone('Asia/Saigon');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $slack = new StubSlackNotifier();
 
         $command = new DailyReportCommand(
             $this->config(),
@@ -37,19 +38,22 @@ final class DailyReportCommandTest extends TestCase
             new ReportBuilder($timezone),
             new Logger($logPath, $timezone),
             $timezone,
-            false
+            false,
+            $slack
         );
 
         ob_start();
         $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
         $output = (string) ob_get_clean();
+        $report = (string) $slack->sentText;
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('1. 今日確認するべきToDo', $output);
-        self::assertStringContainsString('Today task', $output);
-        self::assertStringNotContainsString('Old task', $output);
-        self::assertStringContainsString('3. 近日中に確認が必要なこと', $output);
-        self::assertStringContainsString('Upcoming task', $output);
+        self::assertSame('', $output);
+        self::assertStringContainsString('1. 今日確認するべきToDo', $report);
+        self::assertStringContainsString('Today task', $report);
+        self::assertStringNotContainsString('Old task', $report);
+        self::assertStringContainsString('3. 近日中に確認が必要なこと', $report);
+        self::assertStringContainsString('Upcoming task', $report);
         self::assertFileExists($logPath);
     }
 
@@ -104,19 +108,21 @@ final class DailyReportCommandTest extends TestCase
         ob_start();
         $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
         $output = (string) ob_get_clean();
+        $report = (string) $slack->sentText;
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('1. 今日確認するべきToDo', $output);
-        self::assertStringContainsString('Today task', $output);
-        self::assertStringContainsString('3. 近日中に確認が必要なこと', $output);
-        self::assertStringContainsString('Meeting prep', $output);
-        self::assertSame($output, $slack->sentText);
+        self::assertSame('', $output);
+        self::assertStringContainsString('1. 今日確認するべきToDo', $report);
+        self::assertStringContainsString('Today task', $report);
+        self::assertStringContainsString('3. 近日中に確認が必要なこと', $report);
+        self::assertStringContainsString('Meeting prep', $report);
     }
 
     public function testContinuesWhenOneSourceFails(): void
     {
         $timezone = new DateTimeZone('Asia/Saigon');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $slack = new StubSlackNotifier();
 
         $command = new DailyReportCommand(
             $this->multiSourceConfig(),
@@ -131,16 +137,19 @@ final class DailyReportCommandTest extends TestCase
             new ReportBuilder($timezone),
             new Logger($logPath, $timezone),
             $timezone,
-            false
+            false,
+            $slack
         );
 
         ob_start();
         $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
         $output = (string) ob_get_clean();
+        $report = (string) $slack->sentText;
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('Meeting prep', $output);
-        self::assertStringNotContainsString('Source failed', $output);
+        self::assertSame('', $output);
+        self::assertStringContainsString('Meeting prep', $report);
+        self::assertStringNotContainsString('Source failed', $report);
 
         $log = (string) file_get_contents($logPath);
         self::assertStringContainsString('source_processing_failed', $log);
@@ -154,6 +163,7 @@ final class DailyReportCommandTest extends TestCase
     {
         $timezone = new DateTimeZone('Asia/Saigon');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $slack = new StubSlackNotifier();
 
         $command = new DailyReportCommand(
             $this->structuredConfig(),
@@ -177,35 +187,39 @@ final class DailyReportCommandTest extends TestCase
             new ReportBuilder($timezone),
             new Logger($logPath, $timezone),
             $timezone,
-            false
+            false,
+            $slack
         );
 
         ob_start();
         $exitCode = $command->run(['daily_report.php', '--date=2026-04-17']);
         $output = (string) ob_get_clean();
+        $report = (string) $slack->sentText;
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('1. 今日確認するべきToDo', $output);
-        self::assertStringContainsString('【09:30】決済確認 | 決済システム', $output);
-        self::assertStringContainsString('2. 今日が期限の案件のタスク', $output);
-        self::assertStringContainsString('【】決済追加確認 | 決済システム', $output);
-        self::assertStringContainsString('楽天ペイV2', $output);
-        self::assertStringContainsString('楽天ペイ表示確認 | 楽天ペイV2', $output);
-        self::assertStringContainsString('3. 近日中に確認が必要なこと', $output);
-        self::assertStringContainsString('【04/20 10:00】来週の確認 | 決済システム', $output);
-        self::assertStringContainsString('】来週の確認 | 決済システム', $output);
-        self::assertStringContainsString('【04/20 10:00 - 11:00】MTG K&G | その他', $output);
-        self::assertStringContainsString('【04/20 16:00】委員会活動 | 学校', $output);
-        self::assertStringContainsString('4. その他トピックス', $output);
-        self::assertStringContainsString('  以下の通り祝日があります。', $output);
-        self::assertStringContainsString('    4月21日 ベトナム暦的吉日', $output);
-        self::assertStringNotContainsString('https://notion.example', $output);
+        self::assertSame('', $output);
+        self::assertStringContainsString('1. 今日確認するべきToDo', $report);
+        self::assertStringContainsString('【09:30】決済確認 | 決済システム', $report);
+        self::assertStringContainsString('2. 今日が期限の案件のタスク', $report);
+        self::assertStringContainsString('【】決済追加確認 | 決済システム', $report);
+        self::assertStringContainsString('楽天ペイV2', $report);
+        self::assertStringContainsString('楽天ペイ表示確認 | 楽天ペイV2', $report);
+        self::assertStringContainsString('3. 近日中に確認が必要なこと', $report);
+        self::assertStringContainsString('【04/20 10:00】来週の確認 | 決済システム', $report);
+        self::assertStringContainsString('】来週の確認 | 決済システム', $report);
+        self::assertStringContainsString('【04/20 10:00 - 11:00】MTG K&G | その他', $report);
+        self::assertStringContainsString('【04/20 16:00】委員会活動 | 学校', $report);
+        self::assertStringContainsString('4. その他トピックス', $report);
+        self::assertStringContainsString('  以下の通り祝日があります。', $report);
+        self::assertStringContainsString('    4月21日 ベトナム暦的吉日', $report);
+        self::assertStringNotContainsString('https://notion.example', $report);
     }
 
     public function testResolvesRelationProjectTitlesForGrouping(): void
     {
         $timezone = new DateTimeZone('Asia/Saigon');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $slack = new StubSlackNotifier();
 
         $command = new DailyReportCommand(
             $this->structuredConfig(),
@@ -226,17 +240,20 @@ final class DailyReportCommandTest extends TestCase
             new ReportBuilder($timezone),
             new Logger($logPath, $timezone),
             $timezone,
-            false
+            false,
+            $slack
         );
 
         ob_start();
         $exitCode = $command->run(['daily_report.php', '--date=2026-04-17']);
         $output = (string) ob_get_clean();
+        $report = (string) $slack->sentText;
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('2. 今日が期限の案件のタスク', $output);
-        self::assertStringContainsString('楽天ペイ表示確認 | 楽天ペイV2', $output);
-        self::assertStringNotContainsString('楽天ペイ表示確認 | その他', $output);
+        self::assertSame('', $output);
+        self::assertStringContainsString('2. 今日が期限の案件のタスク', $report);
+        self::assertStringContainsString('楽天ペイ表示確認 | 楽天ペイV2', $report);
+        self::assertStringNotContainsString('楽天ペイ表示確認 | その他', $report);
     }
 
     public function testUsesOpenAISummaryForSlackAndMailWhenConfigured(): void
@@ -266,12 +283,13 @@ final class DailyReportCommandTest extends TestCase
         ob_start();
         $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
         $output = (string) ob_get_clean();
+        $report = (string) $slack->sentText;
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('要約済みタスク', $output);
-        self::assertStringContainsString('Today task', $output);
-        self::assertSame($output, $slack->sentText);
-        self::assertSame($output, $mail->sentBody);
+        self::assertSame('', $output);
+        self::assertStringContainsString('要約済みタスク', $report);
+        self::assertStringContainsString('Today task', $report);
+        self::assertSame($report, $mail->sentBody);
         self::assertSame('Notion Daily Report 2026-04-16', $mail->sentSubject);
         self::assertStringContainsString('Today task', $openai->receivedSchedule);
     }
@@ -309,8 +327,7 @@ final class DailyReportCommandTest extends TestCase
         $output = (string) ob_get_clean();
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('Today task', $output);
-        self::assertStringNotContainsString('AI comment should not be used.', $output);
+        self::assertSame('', $output);
         self::assertSame('', $openai->receivedSchedule);
         self::assertNull($slack->sentText);
         self::assertNull($mail->sentBody);
@@ -344,8 +361,8 @@ final class DailyReportCommandTest extends TestCase
         $output = (string) ob_get_clean();
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('Today task', $output);
-        self::assertSame($output, $mail->sentBody);
+        self::assertSame('', $output);
+        self::assertStringContainsString('Today task', (string) $mail->sentBody);
         self::assertSame('Notion Daily Report 2026-04-16', $mail->sentSubject);
 
         $log = (string) file_get_contents($logPath);
@@ -381,7 +398,7 @@ final class DailyReportCommandTest extends TestCase
         $output = (string) ob_get_clean();
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('Today task', $output);
+        self::assertSame('', $output);
 
         $log = (string) file_get_contents($logPath);
         self::assertStringContainsString('mail_notification_failed', $log);
@@ -480,11 +497,12 @@ final class DailyReportCommandTest extends TestCase
         ob_start();
         $exitCode = $command->run(['daily_report.php', '--date=2026-04-17']);
         $output = (string) ob_get_clean();
+        $report = (string) $slack->sentText;
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('お子様の学校の予定があります。', $output);
-        self::assertSame($output, $slack->sentText);
-        self::assertSame($output, $mail->sentBody);
+        self::assertSame('', $output);
+        self::assertStringContainsString('お子様の学校の予定があります。', $report);
+        self::assertSame($report, $mail->sentBody);
         self::assertStringContainsString('委員会活動', $openai->receivedSchedule);
         self::assertStringContainsString('委員会活動 | 学校', $openai->receivedSchedule);
     }
@@ -493,6 +511,7 @@ final class DailyReportCommandTest extends TestCase
     {
         $timezone = new DateTimeZone('Asia/Saigon');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $slack = new StubSlackNotifier();
 
         $command = new DailyReportCommand(
             $this->config(),
@@ -505,17 +524,19 @@ final class DailyReportCommandTest extends TestCase
             new Logger($logPath, $timezone),
             $timezone,
             false,
-            null,
+            $slack,
             new FailingOpenAIClient()
         );
 
         ob_start();
         $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
         $output = (string) ob_get_clean();
+        $report = (string) $slack->sentText;
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('Today task', $output);
-        self::assertStringContainsString('1. 今日確認するべきToDo', $output);
+        self::assertSame('', $output);
+        self::assertStringContainsString('Today task', $report);
+        self::assertStringContainsString('1. 今日確認するべきToDo', $report);
         self::assertStringContainsString('openai_summary_failed', (string) file_get_contents($logPath));
     }
 

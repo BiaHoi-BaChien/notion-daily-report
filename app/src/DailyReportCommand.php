@@ -127,7 +127,6 @@ final class DailyReportCommand
             ]);
 
             $report = $this->buildNotificationReport($classified, $schedule, $runId);
-            echo $report;
             $slackStatus = $this->sendSlackReport($report, $runId);
             $mailStatus = $this->sendMailReport($report, $today, $runId);
 

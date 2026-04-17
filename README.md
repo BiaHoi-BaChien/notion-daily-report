@@ -1,6 +1,6 @@
 # notion-daily-report
 
-PHP 8.1+ CLI batch that reads near-term Notion data-source items, filters and formats them in PHP, asks OpenAI for an optional opening comment, prints a Japanese daily report, and can post the same report to Slack and email.
+PHP 8.1+ CLI batch that reads near-term Notion data-source items, filters and formats them in PHP, asks OpenAI for an optional opening comment, and can send a Japanese daily report to Slack and email.
 
 ## Requirements
 
@@ -108,7 +108,7 @@ Run deterministically for a specific date:
 php app/batch/daily_report.php --date=2026-04-16
 ```
 
-The report is printed to stdout and, when configured, sent to Slack and email. Logs are written to `app/logs/daily_report.log` by default.
+The report is sent to Slack and email when configured. The batch does not print the report body to stdout; operational logs are written to `app/logs/daily_report.log` by default.
 
 ## Hostinger Cron Example
 
@@ -132,7 +132,7 @@ Keep `.env` outside any public web root whenever possible.
 - Classifies items as `overdue`, `today`, `upcoming`, or `recent_past`
 - Formats the report locally in PHP by section, project, genre, and date/time
 - Sends the formatted schedule to OpenAI for an optional positive opening comment when configured
-- Prints the final report, optionally posts it to Slack, optionally sends it by email, and writes JSON-line logs
+- Sends the final report to Slack and email when configured, and writes JSON-line logs
 - Logs source-level start/completion/failure, fetch/extraction/filter counts, classification counts, notification status, report size, and run duration for operation checks
 - Logs Slack or email delivery failures without blocking the remaining delivery steps
 

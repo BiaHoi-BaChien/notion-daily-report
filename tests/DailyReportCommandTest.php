@@ -141,6 +141,13 @@ final class DailyReportCommandTest extends TestCase
         self::assertSame(0, $exitCode);
         self::assertStringContainsString('Meeting prep', $output);
         self::assertStringNotContainsString('Source failed', $output);
+
+        $log = (string) file_get_contents($logPath);
+        self::assertStringContainsString('source_processing_failed', $log);
+        self::assertStringContainsString('source_processing_complete', $log);
+        self::assertStringContainsString('"successful_source_count":1', $log);
+        self::assertStringContainsString('"failed_source_count":1', $log);
+        self::assertStringContainsString('"classification_counts"', $log);
     }
 
     public function testRendersStructuredPhpReportWithProjectsCalendarAndHoliday(): void
@@ -308,6 +315,111 @@ final class DailyReportCommandTest extends TestCase
         self::assertNull($slack->sentText);
         self::assertNull($mail->sentBody);
         self::assertNull($mail->sentSubject);
+    }
+
+    public function testContinuesMailDeliveryWhenSlackNotificationFails(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $mail = new StubMailNotifier();
+
+        $command = new DailyReportCommand(
+            $this->config(),
+            new StubNotionClient([
+                $this->page('Today task', '2026-04-16', '未着手'),
+            ]),
+            new PropertyExtractor($timezone),
+            new DateFilter($timezone),
+            new ReportBuilder($timezone),
+            new Logger($logPath, $timezone),
+            $timezone,
+            false,
+            new FailingSlackNotifier(),
+            null,
+            $mail
+        );
+
+        ob_start();
+        $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
+        $output = (string) ob_get_clean();
+
+        self::assertSame(0, $exitCode);
+        self::assertStringContainsString('Today task', $output);
+        self::assertSame($output, $mail->sentBody);
+        self::assertSame('Notion Daily Report 2026-04-16', $mail->sentSubject);
+
+        $log = (string) file_get_contents($logPath);
+        self::assertStringContainsString('slack_notification_failed', $log);
+        self::assertStringContainsString('mail_notification_sent', $log);
+        self::assertStringContainsString('"slack_status":"failed"', $log);
+        self::assertStringContainsString('"mail_status":"sent"', $log);
+    }
+
+    public function testCompletesWhenMailNotificationFails(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+
+        $command = new DailyReportCommand(
+            $this->config(),
+            new StubNotionClient([
+                $this->page('Today task', '2026-04-16', '未着手'),
+            ]),
+            new PropertyExtractor($timezone),
+            new DateFilter($timezone),
+            new ReportBuilder($timezone),
+            new Logger($logPath, $timezone),
+            $timezone,
+            false,
+            null,
+            null,
+            new FailingMailNotifier()
+        );
+
+        ob_start();
+        $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
+        $output = (string) ob_get_clean();
+
+        self::assertSame(0, $exitCode);
+        self::assertStringContainsString('Today task', $output);
+
+        $log = (string) file_get_contents($logPath);
+        self::assertStringContainsString('mail_notification_failed', $log);
+        self::assertStringContainsString('"mail_status":"failed"', $log);
+        self::assertStringContainsString('daily_report_end', $log);
+    }
+
+    public function testLogsOperationalSummaryForSuccessfulRun(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+
+        $command = new DailyReportCommand(
+            $this->config(),
+            new StubNotionClient([
+                $this->page('Today task', '2026-04-16', '未着手'),
+            ]),
+            new PropertyExtractor($timezone),
+            new DateFilter($timezone),
+            new ReportBuilder($timezone),
+            new Logger($logPath, $timezone),
+            $timezone,
+            false
+        );
+
+        ob_start();
+        $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
+        ob_end_clean();
+
+        self::assertSame(0, $exitCode);
+
+        $log = (string) file_get_contents($logPath);
+        self::assertStringContainsString('source_processing_start', $log);
+        self::assertStringContainsString('source_processing_complete', $log);
+        self::assertStringContainsString('"date_filter":{"property":"期限","on_or_after":"2026-04-15","on_or_before":"2026-04-19"}', $log);
+        self::assertStringContainsString('"classification_counts":{"overdue":0,"today":1,"upcoming":0,"recent_past":0}', $log);
+        self::assertStringContainsString('"duration_ms"', $log);
+        self::assertStringContainsString('"report_size_bytes"', $log);
     }
 
     public function testPassesProjectToOpenAISummary(): void
@@ -727,6 +839,19 @@ final class StubSlackNotifier implements SlackNotifierInterface
     }
 }
 
+final class FailingSlackNotifier implements SlackNotifierInterface
+{
+    public function isConfigured(): bool
+    {
+        return true;
+    }
+
+    public function send(string $text): void
+    {
+        throw new RuntimeException('Slack is unavailable.');
+    }
+}
+
 final class StubOpenAIClient implements OpenAIClientInterface
 {
     public string $receivedSchedule = '';
@@ -774,5 +899,18 @@ final class StubMailNotifier implements MailNotifierInterface
     {
         $this->sentSubject = $subject;
         $this->sentBody = $body;
+    }
+}
+
+final class FailingMailNotifier implements MailNotifierInterface
+{
+    public function isConfigured(): bool
+    {
+        return true;
+    }
+
+    public function send(string $subject, string $body): void
+    {
+        throw new RuntimeException('SMTP is unavailable.');
     }
 }

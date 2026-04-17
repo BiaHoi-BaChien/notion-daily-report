@@ -128,10 +128,13 @@ Keep `.env` outside any public web root whenever possible.
 - Paginates through all results per source
 - Extracts title, date/time, status/select, URL, last edited time, optional genre, and optional project
 - Filters in PHP by date window and excluded statuses
+- Continues processing other sources when one source fails, and logs the failed source
 - Classifies items as `overdue`, `today`, `upcoming`, or `recent_past`
 - Formats the report locally in PHP by section, project, genre, and date/time
 - Sends the formatted schedule to OpenAI for an optional positive opening comment when configured
 - Prints the final report, optionally posts it to Slack, optionally sends it by email, and writes JSON-line logs
+- Logs source-level start/completion/failure, fetch/extraction/filter counts, classification counts, notification status, report size, and run duration for operation checks
+- Logs Slack or email delivery failures without blocking the remaining delivery steps
 
 ## Tests
 
@@ -143,4 +146,4 @@ The test suite covers config mapping, date filtering, Notion property extraction
 
 ## Phase 3+ Roadmap
 
-- Harden source-level continuation and operational logging
+- Completed Phase 4: hardened source-level continuation and operational logging

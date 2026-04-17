@@ -12,6 +12,7 @@ final class ReportBuilder
     private const SOURCE_TODO = 'ToDo';
     private const SOURCE_PROJECT_TASK = '各案件のタスク';
     private const SOURCE_CALENDAR = 'カレンダー';
+    private const SOURCE_IDENTITY_DOCUMENT = '身分証明書';
     private const GROUP_OTHER = 'その他';
     private const GROUP_SCHOOL = '学校';
     private const GROUP_LIFE = '生活';
@@ -82,13 +83,32 @@ final class ReportBuilder
         );
 
         $holidays = $this->holidayItems($items);
-        if ($holidays !== []) {
+        $identityDocuments = $this->identityDocumentItems($items);
+        if ($holidays !== [] || $identityDocuments !== []) {
             $lines[] = '';
             $lines[] = '4. その他トピックス';
-            $lines[] = '  以下の通り祝日があります。';
-            foreach ($holidays as $holiday) {
-                $date = $this->dateForDisplay($holiday, 'n月j日');
-                $lines[] = sprintf('    %s %s', $date, $holiday['title'] ?? '無題');
+            if ($holidays !== []) {
+                $lines[] = '  以下の通り祝日があります。';
+                foreach ($holidays as $holiday) {
+                    $date = $this->dateForDisplay($holiday, 'n月j日');
+                    $lines[] = sprintf('    %s %s', $date, $holiday['title'] ?? '無題');
+                }
+            }
+
+            if ($identityDocuments !== []) {
+                if ($holidays !== []) {
+                    $lines[] = '';
+                }
+
+                $lines[] = '  以下の身分証明書の有効期限が近づいています。';
+                foreach ($this->sortRows($identityDocuments, true) as $identityDocument) {
+                    $lines[] = sprintf(
+                        '  【%s】%s | %s',
+                        $this->dateText($identityDocument, true),
+                        $identityDocument['title'] ?? '無題',
+                        $this->groupName($identityDocument)
+                    );
+                }
             }
         }
 
@@ -136,6 +156,7 @@ final class ReportBuilder
             $items,
             fn (array $item): bool => ($item['classification'] ?? null) === 'today'
                 && !$this->isHoliday($item)
+                && !$this->isIdentityDocument($item)
                 && ($this->isTodo($item) || $this->isCalendar($item))
         ));
     }
@@ -163,6 +184,7 @@ final class ReportBuilder
             $items,
             fn (array $item): bool => ($item['classification'] ?? null) === 'upcoming'
                 && !$this->isHoliday($item)
+                && !$this->isIdentityDocument($item)
         ));
     }
 
@@ -175,6 +197,18 @@ final class ReportBuilder
         return array_values(array_filter(
             $items,
             fn (array $item): bool => $this->isCalendar($item) && $this->isHoliday($item)
+        ));
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function identityDocumentItems(array $items): array
+    {
+        return array_values(array_filter(
+            $items,
+            fn (array $item): bool => $this->isIdentityDocument($item)
         ));
     }
 
@@ -205,6 +239,10 @@ final class ReportBuilder
      */
     private function groupName(array $item): string
     {
+        if ($this->isIdentityDocument($item)) {
+            return self::SOURCE_IDENTITY_DOCUMENT;
+        }
+
         if ($this->isCalendar($item)) {
             $genre = trim((string) ($item['genre'] ?? ''));
             if ($genre === self::GROUP_SCHOOL || $genre === self::GROUP_LIFE) {
@@ -369,6 +407,15 @@ final class ReportBuilder
     {
         return ($item['source_name'] ?? null) === self::SOURCE_CALENDAR
             || str_contains((string) ($item['source_role'] ?? ''), '予定');
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function isIdentityDocument(array $item): bool
+    {
+        return ($item['source_name'] ?? null) === self::SOURCE_IDENTITY_DOCUMENT
+            || str_contains((string) ($item['source_role'] ?? ''), '身分証明書');
     }
 
     /**

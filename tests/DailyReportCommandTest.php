@@ -181,6 +181,9 @@ final class DailyReportCommandTest extends TestCase
                     $this->calendarPage('委員会活動', '2026-04-20T16:00:00+07:00', '学校'),
                     $this->calendarPage('ベトナム暦的吉日', '2026-04-21', '祝日'),
                 ],
+                'identity-source' => [
+                    $this->identityDocumentPage('在留カード', '2026-05-01', '有効'),
+                ],
             ]),
             new PropertyExtractor($timezone),
             new DateFilter($timezone),
@@ -212,6 +215,9 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringContainsString('4. その他トピックス', $report);
         self::assertStringContainsString('  以下の通り祝日があります。', $report);
         self::assertStringContainsString('    4月21日 ベトナム暦的吉日', $report);
+        self::assertStringContainsString('  以下の身分証明書の有効期限が近づいています。', $report);
+        self::assertStringContainsString('【05/01】在留カード | 身分証明書', $report);
+        self::assertSame(1, substr_count($report, '在留カード'));
         self::assertStringNotContainsString('https://notion.example', $report);
     }
 
@@ -230,6 +236,7 @@ final class DailyReportCommandTest extends TestCase
                         $this->projectTaskPageWithRelation('楽天ペイ表示確認', '2026-04-17', 'Testing', 'project-page-id'),
                     ],
                     'calendar-source' => [],
+                    'identity-source' => [],
                 ],
                 [
                     'project-page-id' => $this->relatedPage('楽天ペイV2'),
@@ -632,6 +639,19 @@ final class DailyReportCommandTest extends TestCase
                     'exclude_statuses' => [],
                     'filter_property_ids' => [],
                 ],
+                [
+                    'enabled' => true,
+                    'name' => '身分証明書',
+                    'role' => '期限切れが迫っている身分証明書の確認',
+                    'data_source_id' => 'identity-source',
+                    'date_property' => '有効期限',
+                    'status_property' => '状態',
+                    'genre_property' => '',
+                    'lookback_days' => 0,
+                    'lookahead_days' => 60,
+                    'exclude_statuses' => ['無効'],
+                    'filter_property_ids' => [],
+                ],
             ],
         ];
     }
@@ -791,6 +811,34 @@ final class DailyReportCommandTest extends TestCase
         ];
 
         return $page;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function identityDocumentPage(string $title, string $date, ?string $status): array
+    {
+        return [
+            'id' => strtolower(str_replace(' ', '-', $title)),
+            'url' => 'https://notion.example/' . rawurlencode($title),
+            'last_edited_time' => '2026-04-16T00:00:00.000Z',
+            'properties' => [
+                'Name' => [
+                    'type' => 'title',
+                    'title' => [
+                        ['plain_text' => $title],
+                    ],
+                ],
+                '有効期限' => [
+                    'type' => 'date',
+                    'date' => ['start' => $date],
+                ],
+                '状態' => [
+                    'type' => 'status',
+                    'status' => $status === null ? null : ['name' => $status],
+                ],
+            ],
+        ];
     }
 
     /**

@@ -63,6 +63,18 @@ $baseSources = [
         'exclude_statuses' => [],
         'filter_property_ids' => [],
     ],
+    [
+        'enabled' => true,
+        'name' => '身分証明書',
+        'role' => '期限切れが迫っている身分証明書の確認',
+        'date_property' => '有効期限',
+        'status_property' => '状態',
+        'genre_property' => '',
+        'lookback_days' => 0,
+        'lookahead_days' => 60,
+        'exclude_statuses' => ['無効'],
+        'filter_property_ids' => [],
+    ],
 ];
 
 $sources = \App\SourceConfigBuilder::buildSources($dataSourceIds, $baseSources);

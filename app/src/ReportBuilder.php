@@ -9,6 +9,14 @@ use DateTimeZone;
 
 final class ReportBuilder
 {
+    private const SOURCE_TODO = 'ToDo';
+    private const SOURCE_PROJECT_TASK = '各案件のタスク';
+    private const SOURCE_CALENDAR = 'カレンダー';
+    private const GROUP_OTHER = 'その他';
+    private const GROUP_SCHOOL = '学校';
+    private const GROUP_LIFE = '生活';
+    private const GENRE_HOLIDAY = '祝日';
+
     private const PRIORITY = [
         'overdue' => 1,
         'today' => 2,
@@ -46,64 +54,55 @@ final class ReportBuilder
     /**
      * @param array<int, array<string, mixed>> $items
      */
-    public function renderConsole(array $items, DateTimeImmutable $today): string
+    public function renderSchedule(array $items, DateTimeImmutable $today): string
     {
-        $lines = [
-            sprintf('Notion Daily Report (%s)', $today->setTimezone($this->timezone)->format('Y-m-d')),
-            '',
-        ];
+        $lines = [];
 
-        if ($items === []) {
-            $lines[] = '該当する項目はありません。';
-            return implode(PHP_EOL, $lines) . PHP_EOL;
-        }
+        $lines[] = '1. 今日確認するべきToDo';
+        $this->appendRows(
+            $lines,
+            $this->todayTodoItems($items),
+            false
+        );
+        $lines[] = '';
 
-        $groups = [
-            'overdue' => '期限超過',
-            'today' => '今日やること',
-            'upcoming' => '近日中に準備したほうがいいこと',
-            'recent_past' => '今日確認したほうがいいこと',
-        ];
+        $lines[] = '2. 今日が期限の案件のタスク';
+        $this->appendRows(
+            $lines,
+            $this->todayProjectTaskItems($items),
+            false
+        );
+        $lines[] = '';
 
-        foreach ($groups as $classification => $heading) {
-            $groupItems = array_values(array_filter(
-                $items,
-                static fn (array $item): bool => ($item['classification'] ?? null) === $classification
-            ));
+        $lines[] = '3. 近日中に確認が必要なこと';
+        $this->appendRows(
+            $lines,
+            $this->upcomingItems($items),
+            true
+        );
 
-            if ($groupItems === []) {
-                continue;
-            }
-
-            $lines[] = '## ' . $heading;
-            foreach ($groupItems as $item) {
-                $source = ($item['source_name'] ?? null) ? sprintf(' [%s]', $item['source_name']) : '';
-                $status = ($item['status'] ?? null) ? sprintf(' / %s', $item['status']) : '';
-                $url = ($item['url'] ?? null) ? sprintf(' / %s', $item['url']) : '';
-                $lines[] = sprintf(
-                    '- [%s]%s %s%s%s',
-                    $item['date'] ?? '日付なし',
-                    $source,
-                    $item['title'] ?? '無題',
-                    $status,
-                    $url
-                );
-            }
+        $holidays = $this->holidayItems($items);
+        if ($holidays !== []) {
             $lines[] = '';
+            $lines[] = '4. その他トピックス';
+            $lines[] = '  以下の通り祝日があります。';
+            foreach ($holidays as $holiday) {
+                $date = $this->dateForDisplay($holiday, 'n月j日');
+                $lines[] = sprintf('    %s %s', $date, $holiday['title'] ?? '無題');
+            }
         }
 
         return rtrim(implode(PHP_EOL, $lines)) . PHP_EOL;
     }
 
-    public function renderSummary(string $summary, DateTimeImmutable $today): string
+    public function renderReport(?string $comment, string $schedule): string
     {
-        return sprintf(
-            "Notion Daily Report (%s)%s%s%s",
-            $today->setTimezone($this->timezone)->format('Y-m-d'),
-            PHP_EOL . PHP_EOL,
-            trim($summary),
-            PHP_EOL
-        );
+        $comment = trim((string) $comment);
+        if ($comment === '') {
+            return rtrim($schedule) . PHP_EOL;
+        }
+
+        return sprintf("%s%s%s%s", $comment, PHP_EOL . PHP_EOL, rtrim($schedule), PHP_EOL);
     }
 
     /**
@@ -125,5 +124,258 @@ final class ReportBuilder
         }
 
         return ($item['status'] ?? null) === null ? 'recent_past' : 'overdue';
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function todayTodoItems(array $items): array
+    {
+        return array_values(array_filter(
+            $items,
+            fn (array $item): bool => ($item['classification'] ?? null) === 'today'
+                && !$this->isHoliday($item)
+                && ($this->isTodo($item) || $this->isCalendar($item))
+        ));
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function todayProjectTaskItems(array $items): array
+    {
+        return array_values(array_filter(
+            $items,
+            fn (array $item): bool => ($item['classification'] ?? null) === 'today'
+                && $this->isProjectTask($item)
+        ));
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function upcomingItems(array $items): array
+    {
+        return array_values(array_filter(
+            $items,
+            fn (array $item): bool => ($item['classification'] ?? null) === 'upcoming'
+                && !$this->isHoliday($item)
+        ));
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function holidayItems(array $items): array
+    {
+        return array_values(array_filter(
+            $items,
+            fn (array $item): bool => $this->isCalendar($item) && $this->isHoliday($item)
+        ));
+    }
+
+    /**
+     * @param array<int, string> $lines
+     * @param array<int, array<string, mixed>> $items
+     */
+    private function appendRows(array &$lines, array $items, bool $includeDate): void
+    {
+        if ($items === []) {
+            $lines[] = '  該当なし';
+            return;
+        }
+
+        $items = $this->sortRows($items, $includeDate);
+        foreach ($items as $item) {
+            $lines[] = sprintf(
+                '  【%s】%s | %s',
+                $this->dateText($item, $includeDate),
+                $item['title'] ?? '無題',
+                $this->groupName($item)
+            );
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function groupName(array $item): string
+    {
+        if ($this->isCalendar($item)) {
+            $genre = trim((string) ($item['genre'] ?? ''));
+            if ($genre === self::GROUP_SCHOOL || $genre === self::GROUP_LIFE) {
+                return $genre;
+            }
+        }
+
+        return $this->projectGroup($item);
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function projectGroup(array $item): string
+    {
+        $project = trim((string) ($item['project'] ?? ''));
+        return $project === '' ? self::GROUP_OTHER : $project;
+    }
+
+    private function groupPriority(string $group): int
+    {
+        return match ($group) {
+            self::GROUP_OTHER => 90,
+            self::GROUP_SCHOOL => 91,
+            self::GROUP_LIFE => 92,
+            default => 10,
+        };
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function sortRows(array $items, bool $includeDate): array
+    {
+        usort($items, function (array $left, array $right) use ($includeDate): int {
+            $leftDate = $this->sortDateValue($left);
+            $rightDate = $this->sortDateValue($right);
+
+            if ($leftDate !== $rightDate) {
+                return $leftDate <=> $rightDate;
+            }
+
+            return [
+                $this->groupPriority($this->groupName($left)),
+                $this->groupName($left),
+                $left['title'] ?? '',
+            ] <=> [
+                $this->groupPriority($this->groupName($right)),
+                $this->groupName($right),
+                $right['title'] ?? '',
+            ];
+        });
+
+        return $items;
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function dateText(array $item, bool $includeDate): string
+    {
+        $start = $this->dateTimeFromItem($item, 'date_start');
+        if ($start === null) {
+            return '';
+        }
+
+        $end = $this->dateTimeFromItem($item, 'date_end');
+        $hasStartTime = ($item['date_has_time'] ?? false) === true;
+        $hasEndTime = ($item['date_end_has_time'] ?? false) === true;
+
+        if (!$includeDate && !$hasStartTime) {
+            return '';
+        }
+
+        $startFormat = $includeDate ? ($hasStartTime ? 'm/d H:i' : 'm/d') : 'H:i';
+        $startText = $start->format($startFormat);
+
+        if ($end !== null) {
+            if ($includeDate) {
+                if ($end->format('Y-m-d') === $start->format('Y-m-d') && $hasEndTime) {
+                    $endFormat = 'H:i';
+                } else {
+                    $endFormat = $hasEndTime ? 'm/d H:i' : 'm/d';
+                }
+            } else {
+                $endFormat = $hasEndTime ? 'H:i' : '';
+            }
+
+            if ($endFormat !== '') {
+                return sprintf('%s - %s', $startText, $end->format($endFormat));
+            }
+        }
+
+        return $startText;
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function sortDateValue(array $item): string
+    {
+        $start = $this->dateTimeFromItem($item, 'date_start');
+        if ($start === null) {
+            return '9999-12-31T23:59:59+00:00';
+        }
+
+        return $start->format(DATE_ATOM);
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function dateForDisplay(array $item, string $format): string
+    {
+        $start = $this->dateTimeFromItem($item, 'date_start');
+        if ($start === null) {
+            return (string) ($item['date'] ?? '');
+        }
+
+        return $start->format($format);
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function dateTimeFromItem(array $item, string $key): ?DateTimeImmutable
+    {
+        if (!isset($item[$key]) || !is_string($item[$key]) || trim($item[$key]) === '') {
+            return null;
+        }
+
+        try {
+            return (new DateTimeImmutable($item[$key]))->setTimezone($this->timezone);
+        } catch (\Exception) {
+            return null;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function isTodo(array $item): bool
+    {
+        return ($item['source_name'] ?? null) === self::SOURCE_TODO
+            || str_contains((string) ($item['source_role'] ?? ''), '今日やるべき');
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function isProjectTask(array $item): bool
+    {
+        return ($item['source_name'] ?? null) === self::SOURCE_PROJECT_TASK
+            || str_contains((string) ($item['source_role'] ?? ''), '各案件');
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function isCalendar(array $item): bool
+    {
+        return ($item['source_name'] ?? null) === self::SOURCE_CALENDAR
+            || str_contains((string) ($item['source_role'] ?? ''), '予定');
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function isHoliday(array $item): bool
+    {
+        return trim((string) ($item['genre'] ?? '')) === self::GENRE_HOLIDAY;
     }
 }

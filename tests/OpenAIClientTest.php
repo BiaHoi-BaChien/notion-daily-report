@@ -32,18 +32,10 @@ final class OpenAIClientTest extends TestCase
         ]);
 
         $client = new OpenAIClient('sk-test', 'gpt-5.2', 30, $httpClient);
-        $summary = $client->summarize([
-            [
-                'source_name' => 'ToDo',
-                'source_role' => '今日やるべき作業の確認',
-                'title' => '請求書確認',
-                'date' => '2026-04-16',
-                'status' => '未着手',
-                'classification' => 'today',
-                'url' => 'https://notion.example/page',
-                'last_edited_time' => '2026-04-16T00:00:00Z',
-            ],
-        ]);
+        $schedule = '1. 今日確認するべきToDo' . PHP_EOL
+            . '  ＊決済システム' . PHP_EOL
+            . '    請求書確認（09:00）';
+        $summary = $client->summarize($schedule);
 
         self::assertStringContainsString('請求書確認', $summary);
         self::assertCount(1, $history);
@@ -53,20 +45,11 @@ final class OpenAIClientTest extends TestCase
 
         $body = json_decode((string) $history[0]['request']->getBody(), true);
         self::assertSame('gpt-5.2', $body['model']);
-        self::assertStringContainsString('推測や補完をしない', $body['instructions']);
+        self::assertStringContainsString('整形や再分類はしない', $body['instructions']);
+        self::assertStringContainsString('前向きに今日一日を始められる', $body['instructions']);
+        self::assertStringContainsString('予定の再掲は出力しない', $body['instructions']);
         self::assertStringContainsString('請求書確認', $body['input']);
-        self::assertStringNotContainsString('last_edited_time', $body['input']);
-    }
-
-    public function testPayloadIsLimitedToOneHundredItems(): void
-    {
-        $client = new OpenAIClient('sk-test', 'gpt-5.2', 30);
-        $items = array_map(
-            static fn (int $index): array => ['title' => 'Task ' . $index],
-            range(1, 101)
-        );
-
-        self::assertCount(100, $client->buildPayload($items));
+        self::assertSame($schedule, $body['input']);
     }
 
     public function testAutoModelTriesCandidatesUntilOneSucceeds(): void
@@ -92,7 +75,7 @@ final class OpenAIClientTest extends TestCase
 
         $client = new OpenAIClient('sk-test', 'auto', 30, $httpClient, ['first-model', 'second-model']);
 
-        self::assertSame('summary from second model', $client->summarize([['title' => 'Task']]));
+        self::assertSame('summary from second model', $client->summarize('1. 今日確認するべきToDo'));
         self::assertCount(2, $history);
 
         $firstBody = json_decode((string) $history[0]['request']->getBody(), true);
@@ -128,6 +111,6 @@ final class OpenAIClientTest extends TestCase
         $this->expectExceptionMessage('HTTP 403');
         $this->expectExceptionMessage('does not have access to model');
 
-        $client->summarize([['title' => 'Task']]);
+        $client->summarize('1. 今日確認するべきToDo');
     }
 }

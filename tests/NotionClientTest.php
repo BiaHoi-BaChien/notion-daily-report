@@ -39,7 +39,14 @@ final class NotionClientTest extends TestCase
         ]);
 
         $client = new NotionClient('secret-token', '2026-03-11', 20, $httpClient);
-        $results = $client->queryDataSource('source-id', ['title', 'due date']);
+        $results = $client->queryDataSource('source-id', ['title', 'due date'], [
+            'and' => [
+                [
+                    'property' => '期限',
+                    'date' => ['on_or_after' => '2026-04-17'],
+                ],
+            ],
+        ]);
 
         self::assertSame([['id' => 'page-1'], ['id' => 'page-2']], $results);
         self::assertCount(2, $history);
@@ -53,6 +60,7 @@ final class NotionClientTest extends TestCase
 
         $secondBody = json_decode((string) $history[1]['request']->getBody(), true);
         self::assertSame('cursor-2', $secondBody['start_cursor']);
+        self::assertSame('期限', $secondBody['filter']['and'][0]['property']);
     }
 
     public function testResolvesSingleDataSourceWhenDatabaseIdIsConfigured(): void
@@ -127,5 +135,36 @@ final class NotionClientTest extends TestCase
         $this->expectExceptionMessage('Archive (source-b)');
 
         $client->queryDataSource('database-id');
+    }
+
+    public function testRetrievesPage(): void
+    {
+        $history = [];
+        $mock = new MockHandler([
+            new Response(200, [], json_encode([
+                'id' => 'page-id',
+                'properties' => [
+                    'Name' => [
+                        'type' => 'title',
+                        'title' => [
+                            ['plain_text' => '決済システム'],
+                        ],
+                    ],
+                ],
+            ])),
+        ]);
+
+        $stack = HandlerStack::create($mock);
+        $stack->push(Middleware::history($history));
+        $httpClient = new Client([
+            'base_uri' => 'https://api.notion.com',
+            'handler' => $stack,
+        ]);
+
+        $client = new NotionClient('secret-token', '2026-03-11', 20, $httpClient);
+
+        self::assertSame('page-id', $client->retrievePage('page-id')['id']);
+        self::assertSame('GET', $history[0]['request']->getMethod());
+        self::assertSame('/v1/pages/page-id', $history[0]['request']->getUri()->getPath());
     }
 }

@@ -54,13 +54,37 @@ final class MailNotifier implements MailNotifierInterface
             }
 
             $mail->Subject = $subject;
-            $mail->Body = $body;
+            $mail->Body = self::renderHtmlBody($body);
             $mail->AltBody = $body;
-            $mail->isHTML(false);
+            $mail->isHTML(true);
             $mail->send();
         } catch (PHPMailerException $exception) {
             throw new MailNotificationException('Mail notification failed: ' . $exception->getMessage(), 0, $exception);
         }
+    }
+
+    public static function renderHtmlBody(string $body): string
+    {
+        $escapedBody = htmlspecialchars(
+            str_replace(["\r\n", "\r"], "\n", rtrim($body)),
+            ENT_QUOTES | ENT_SUBSTITUTE,
+            'UTF-8'
+        );
+
+        return <<<HTML
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:24px;background:#f4f6f8;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Yu Gothic',Meiryo,sans-serif;">
+  <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #d9dee7;border-radius:8px;padding:24px;">
+    <pre style="margin:0;white-space:pre-wrap;word-break:break-word;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Yu Gothic',Meiryo,sans-serif;font-size:14px;line-height:1.75;color:#111827;">{$escapedBody}</pre>
+  </div>
+</body>
+</html>
+HTML;
     }
 
     /**

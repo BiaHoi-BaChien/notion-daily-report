@@ -23,4 +23,14 @@ final class MailNotifierTest extends TestCase
 
         self::assertFalse($notifier->isConfigured());
     }
+
+    public function testRendersHtmlBodyForReadableMailLayout(): void
+    {
+        $html = MailNotifier::renderHtmlBody("1. 今日確認するべきToDo\n  【14:45】確認 <重要> | その他\n");
+
+        self::assertStringContainsString('<pre', $html);
+        self::assertStringContainsString('white-space:pre-wrap', $html);
+        self::assertStringContainsString("1. 今日確認するべきToDo\n  【14:45】確認 &lt;重要&gt; | その他", $html);
+        self::assertStringNotContainsString('確認 <重要>', $html);
+    }
 }

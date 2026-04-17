@@ -29,7 +29,7 @@ final class NotionClient implements NotionClientInterface
         ]);
     }
 
-    public function queryDataSource(string $dataSourceId, array $filterPropertyIds = []): array
+    public function queryDataSource(string $dataSourceId, array $filterPropertyIds = [], array $filter = []): array
     {
         $this->assertConfigured($dataSourceId);
 
@@ -41,6 +41,10 @@ final class NotionClient implements NotionClientInterface
 
         do {
             $payload = ['page_size' => 100];
+            if ($filter !== []) {
+                $payload['filter'] = $filter;
+            }
+
             if ($nextCursor !== null) {
                 $payload['start_cursor'] = $nextCursor;
             }
@@ -72,6 +76,26 @@ final class NotionClient implements NotionClientInterface
         } while ($nextCursor !== null);
 
         return $results;
+    }
+
+    public function retrievePage(string $pageId): array
+    {
+        $this->assertConfigured($pageId);
+        $pageId = trim($pageId);
+
+        try {
+            $response = $this->client->request(
+                'GET',
+                sprintf('/v1/pages/%s', rawurlencode($pageId)),
+                ['headers' => $this->requestHeaders()]
+            );
+        } catch (RequestException $exception) {
+            throw $this->createRequestException('retrieve page', $pageId, $exception);
+        } catch (GuzzleException $exception) {
+            throw new NotionApiException('Notion API request failed: ' . $exception->getMessage(), 0, $exception);
+        }
+
+        return $this->decodeResponse($response);
     }
 
     /**

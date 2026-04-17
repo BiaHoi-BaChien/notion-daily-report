@@ -8,8 +8,5 @@ interface OpenAIClientInterface
 {
     public function isConfigured(): bool;
 
-    /**
-     * @param array<int, array<string, mixed>> $items
-     */
-    public function summarize(array $items): string;
+    public function summarize(string $schedule): string;
 }

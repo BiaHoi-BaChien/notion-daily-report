@@ -34,17 +34,16 @@ final class OpenAIClient implements OpenAIClientInterface
         return trim($this->apiKey) !== '';
     }
 
-    public function summarize(array $items): string
+    public function summarize(string $schedule): string
     {
         if (!$this->isConfigured()) {
             throw new OpenAIException('OPENAI_API_KEY is required.');
         }
 
-        $payload = $this->buildPayload($items);
         $lastException = null;
         foreach ($this->modelsToTry() as $model) {
             try {
-                return $this->createSummary($payload, $model);
+                return $this->createSummary($schedule, $model);
             } catch (OpenAIException $exception) {
                 $lastException = $exception;
             }
@@ -54,9 +53,8 @@ final class OpenAIClient implements OpenAIClientInterface
     }
 
     /**
-     * @param array<int, array<string, mixed>> $payload
      */
-    private function createSummary(array $payload, string $model): string
+    private function createSummary(string $schedule, string $model): string
     {
         try {
             $response = $this->client->request('POST', '/v1/responses', [
@@ -67,7 +65,7 @@ final class OpenAIClient implements OpenAIClientInterface
                 'json' => [
                     'model' => $model,
                     'instructions' => $this->instructions(),
-                    'input' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                    'input' => $schedule,
                 ],
             ]);
         } catch (RequestException $exception) {
@@ -107,38 +105,15 @@ final class OpenAIClient implements OpenAIClientInterface
         return $candidates === [] ? ['gpt-4o-mini', 'gpt-4.1-mini', 'gpt-4o'] : $candidates;
     }
 
-    /**
-     * @param array<int, array<string, mixed>> $items
-     * @return array<int, array<string, mixed>>
-     */
-    public function buildPayload(array $items): array
-    {
-        $payload = [];
-        foreach (array_slice($items, 0, 100) as $item) {
-            $payload[] = [
-                'source_name' => $item['source_name'] ?? null,
-                'source_role' => $item['source_role'] ?? null,
-                'title' => $item['title'] ?? null,
-                'date' => $item['date'] ?? null,
-                'status' => $item['status'] ?? null,
-                'classification' => $item['classification'] ?? null,
-                'url' => $item['url'] ?? null,
-            ];
-        }
-
-        return $payload;
-    }
-
     private function instructions(): string
     {
         return implode("\n", [
-            'あなたはNotionの行動項目を人間向けに整理するアシスタントです。',
-            '入力JSONに含まれる事実だけを使い、推測や補完をしないでください。',
-            '日本語で簡潔に出力してください。',
-            'URLがある項目は必ずURLを含めてください。',
-            '次の3見出しを必ずこの順番で出力してください: 1. 今日やること 2. 今日確認したほうがいいこと 3. 近日中に準備したほうがいいこと',
-            '該当項目がない見出しには「該当なし」と書いてください。',
-            '重要度は classification の overdue, today, upcoming, recent_past の順に考慮してください。',
+            'あなたは朝の予定確認を手伝うアシスタントです。',
+            '入力はPHPで整形済みの今日と近日の予定です。整形や再分類はしないでください。',
+            '入力に含まれる予定だけを根拠にし、推測や補完をしないでください。',
+            'ユーザーが気持ちよく前向きに今日一日を始められるような、日本語の概要コメントだけを返してください。',
+            '出力は2〜4文の自然な文章にしてください。見出し、箇条書き、番号付きリスト、URL、予定の再掲は出力しないでください。',
+            '忙しさや注意点はやわらかく伝え、確認の優先度や進め方が自然に分かるコメントにしてください。',
         ]);
     }
 

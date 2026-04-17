@@ -1,6 +1,6 @@
 # notion-daily-report
 
-PHP 8.1+ CLI batch that reads near-term Notion data-source items, filters them in PHP, summarizes them with OpenAI when configured, prints a Japanese daily report, and can post the same report to Slack and email.
+PHP 8.1+ CLI batch that reads near-term Notion data-source items, filters and formats them in PHP, asks OpenAI for an optional opening comment, prints a Japanese daily report, and can post the same report to Slack and email.
 
 ## Requirements
 
@@ -24,10 +24,13 @@ NOTION_API_KEY=secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 NOTION_VERSION=2026-03-11
 NOTION_DATA_SOURCE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 NOTION_DATA_SOURCE_IDS=
+SLACK_ENABLED=true
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
+OPENAI_ENABLED=true
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=auto
 OPENAI_MODEL_CANDIDATES=gpt-4o-mini,gpt-4.1-mini,gpt-4o
+MAIL_ENABLED=true
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_SECURE=tls
@@ -76,18 +79,20 @@ Update `app/config/app.php` if your Notion property names differ from the defaul
 
 - `date_property`: date property used for filtering
 - `status_property`: status or select property used for exclusion; set to `null` for sources without status
+- `project_property`: optional project name property used for grouping ToDo and project tasks
+- `genre_property`: optional calendar genre property used for grouping school/life plans and holiday topics
 - `exclude_statuses`: statuses removed before reporting
 - `lookback_days` / `lookahead_days`: date window around today
 
 Add more entries to the `sources` array to process multiple Notion sources in one run. Each source is fetched, extracted, and filtered independently; if one source fails, the batch logs that failure and continues with the remaining enabled sources.
 
-`OPENAI_API_KEY` is optional. When it is set, up to 100 filtered items are sent to OpenAI's Responses API as compact JSON and the generated Japanese summary becomes the notification body. When it is empty, the batch uses the local classified report.
+`OPENAI_API_KEY` is optional. When it is set and `OPENAI_ENABLED=true`, the PHP-formatted schedule is sent to OpenAI's Responses API and the generated Japanese opening comment is prepended to the report. The schedule formatting itself is handled locally in PHP. When the key is empty or `OPENAI_ENABLED=false`, the batch sends the same PHP-formatted schedule without an opening AI comment.
 
 The OpenAI API requires a model in each request; there is no server-side `AUTO` model. This app supports an app-level `OPENAI_MODEL=auto`, which tries `OPENAI_MODEL_CANDIDATES` from left to right and falls back to the local classified report if none are available. You can also set `OPENAI_MODEL` to one exact model available in your project.
 
-`SLACK_WEBHOOK_URL` is optional. When it is empty, the Slack step is logged as skipped. When it is set, the final report text is posted to Slack using the incoming webhook.
+`SLACK_WEBHOOK_URL` is optional. When it is empty, the Slack step is logged as skipped. When it is set and `SLACK_ENABLED=true`, the final report text is posted to Slack using the incoming webhook. Set `SLACK_ENABLED=false` to skip Slack even when the webhook URL is configured.
 
-SMTP settings are optional. Mail is sent only when `SMTP_HOST`, `MAIL_FROM`, and `MAIL_TO` are configured. `MAIL_TO` accepts comma-separated recipients.
+SMTP settings are optional. Mail is sent only when `MAIL_ENABLED=true` and `SMTP_HOST`, `MAIL_FROM`, and `MAIL_TO` are configured. `MAIL_TO` accepts comma-separated recipients. Set `MAIL_ENABLED=false` to skip email even when SMTP settings are configured.
 
 ## Usage
 
@@ -121,10 +126,11 @@ Keep `.env` outside any public web root whenever possible.
 - Resolves a configured single-source database ID to its child data-source ID when needed
 - Processes all enabled configured sources
 - Paginates through all results per source
-- Extracts title, date, status/select, URL, and last edited time
+- Extracts title, date/time, status/select, URL, last edited time, optional genre, and optional project
 - Filters in PHP by date window and excluded statuses
 - Classifies items as `overdue`, `today`, `upcoming`, or `recent_past`
-- Sends up to 100 compact items to OpenAI for a Japanese action summary when configured
+- Formats the report locally in PHP by section, project, genre, and date/time
+- Sends the formatted schedule to OpenAI for an optional positive opening comment when configured
 - Prints the final report, optionally posts it to Slack, optionally sends it by email, and writes JSON-line logs
 
 ## Tests

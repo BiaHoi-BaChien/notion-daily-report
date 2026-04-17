@@ -32,6 +32,11 @@ final class DailyReportCommand
     }
 
     /**
+     * @var array<string, ?string>
+     */
+    private array $pageTitleCache = [];
+
+    /**
      * @param array<int, string> $argv
      */
     public function run(array $argv): int
@@ -70,8 +75,8 @@ final class DailyReportCommand
             }
 
             $classified = $this->reportBuilder->classifyAndSort($items, $today);
-            $fallbackReport = $this->reportBuilder->renderConsole($classified, $today);
-            $apiSendCount = $this->shouldSummarizeWithOpenAI($classified) ? min(100, count($classified)) : 0;
+            $schedule = $this->reportBuilder->renderSchedule($classified, $today);
+            $apiSendCount = $this->shouldSummarizeWithOpenAI($classified) ? 1 : 0;
 
             $this->logger->info('daily_report_filtered', [
                 'source_count' => count($sources),
@@ -82,7 +87,7 @@ final class DailyReportCommand
                 'api_send_count' => $apiSendCount,
             ]);
 
-            $report = $this->buildNotificationReport($classified, $fallbackReport, $today);
+            $report = $this->buildNotificationReport($classified, $schedule);
             echo $report;
             $this->sendSlackReport($report);
             $this->sendMailReport($report, $today);
@@ -160,7 +165,8 @@ final class DailyReportCommand
 
         $pages = $this->notionClient->queryDataSource(
             (string) $source['data_source_id'],
-            $source['filter_property_ids'] ?? []
+            $source['filter_property_ids'] ?? [],
+            $this->notionDateFilter($source, $today)
         );
         $this->logger->info('notion_fetch_complete', [
             'source' => $source['name'],
@@ -168,10 +174,17 @@ final class DailyReportCommand
         ]);
 
         $items = [];
+        $extractedCount = 0;
         $extractionErrorCount = 0;
         foreach ($pages as $page) {
             try {
-                $items[] = $this->propertyExtractor->extract($page, $source);
+                $item = $this->propertyExtractor->extract($page, $source);
+                $extractedCount++;
+
+                $filteredItem = $this->dateFilter->filter([$item], $source, $today);
+                if ($filteredItem !== []) {
+                    $items[] = $filteredItem[0];
+                }
             } catch (PropertyExtractionException $exception) {
                 $extractionErrorCount++;
                 $this->logger->error('property_extraction_failed', [
@@ -182,18 +195,151 @@ final class DailyReportCommand
             }
         }
 
-        $filtered = $this->dateFilter->filter($items, $source, $today);
+        $items = $this->resolveProjectRelationTitles($items, (string) $source['name']);
         $this->logger->info('source_filtered', [
             'source' => $source['name'],
-            'extracted_count' => count($items),
+            'extracted_count' => $extractedCount,
             'extraction_error_count' => $extractionErrorCount,
-            'filtered_count' => count($filtered),
+            'filtered_count' => count($items),
         ]);
 
         return [
-            'items' => $filtered,
+            'items' => $items,
             'fetched_count' => count($pages),
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $source
+     * @return array<string, mixed>
+     */
+    private function notionDateFilter(array $source, DateTimeImmutable $today): array
+    {
+        $dateProperty = trim((string) ($source['date_property'] ?? ''));
+        if ($dateProperty === '') {
+            return [];
+        }
+
+        $lookbackDays = max(0, (int) ($source['lookback_days'] ?? 0));
+        $lookaheadDays = max(0, (int) ($source['lookahead_days'] ?? 0));
+        $today = $today->setTimezone($this->timezone);
+        $start = $today->modify(sprintf('-%d days', $lookbackDays))->format('Y-m-d');
+        $end = $today->modify(sprintf('+%d days', $lookaheadDays))->format('Y-m-d');
+
+        return [
+            'and' => [
+                [
+                    'property' => $dateProperty,
+                    'date' => [
+                        'on_or_after' => $start,
+                    ],
+                ],
+                [
+                    'property' => $dateProperty,
+                    'date' => [
+                        'on_or_before' => $end,
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function resolveProjectRelationTitles(array $items, string $sourceName): array
+    {
+        foreach ($items as $index => $item) {
+            if (trim((string) ($item['project'] ?? '')) !== '') {
+                continue;
+            }
+
+            $relationIds = $item['project_relation_ids'] ?? [];
+            if (!is_array($relationIds) || $relationIds === []) {
+                continue;
+            }
+
+            $titles = [];
+            foreach ($relationIds as $relationId) {
+                if (!is_string($relationId) || trim($relationId) === '') {
+                    continue;
+                }
+
+                $title = $this->resolvePageTitle($relationId, $sourceName, (string) ($item['title'] ?? ''));
+                if ($title !== null) {
+                    $titles[] = $title;
+                }
+            }
+
+            if ($titles !== []) {
+                $items[$index]['project'] = implode('、', $titles);
+            }
+        }
+
+        return $items;
+    }
+
+    private function resolvePageTitle(string $pageId, string $sourceName, string $itemTitle): ?string
+    {
+        $pageId = trim($pageId);
+        if ($pageId === '') {
+            return null;
+        }
+
+        if (array_key_exists($pageId, $this->pageTitleCache)) {
+            return $this->pageTitleCache[$pageId];
+        }
+
+        try {
+            $page = $this->notionClient->retrievePage($pageId);
+            $title = $this->extractPageTitle($page);
+            $this->pageTitleCache[$pageId] = $title;
+            return $title;
+        } catch (Throwable $exception) {
+            $this->logger->error('project_relation_resolution_failed', [
+                'source' => $sourceName,
+                'item_title' => $itemTitle,
+                'relation_page_id' => $pageId,
+                'error' => $exception->getMessage(),
+            ]);
+            $this->pageTitleCache[$pageId] = null;
+            return null;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $page
+     */
+    private function extractPageTitle(array $page): ?string
+    {
+        $properties = $page['properties'] ?? null;
+        if (!is_array($properties)) {
+            return null;
+        }
+
+        foreach ($properties as $property) {
+            if (!is_array($property) || ($property['type'] ?? null) !== 'title') {
+                continue;
+            }
+
+            $chunks = $property['title'] ?? [];
+            if (!is_array($chunks)) {
+                return null;
+            }
+
+            $title = '';
+            foreach ($chunks as $chunk) {
+                if (is_array($chunk)) {
+                    $title .= (string) ($chunk['plain_text'] ?? '');
+                }
+            }
+
+            $title = trim($title);
+            return $title === '' ? null : $title;
+        }
+
+        return null;
     }
 
     /**
@@ -218,6 +364,13 @@ final class DailyReportCommand
 
     private function sendSlackReport(string $report): void
     {
+        if (!$this->isFeatureEnabled('slack')) {
+            $this->logger->info('slack_notification_skipped', [
+                'reason' => 'Slack notification is disabled.',
+            ]);
+            return;
+        }
+
         if ($this->slackNotifier === null || !$this->slackNotifier->isConfigured()) {
             $this->logger->info('slack_notification_skipped', [
                 'reason' => 'SLACK_WEBHOOK_URL is not configured.',
@@ -232,37 +385,35 @@ final class DailyReportCommand
     /**
      * @param array<int, array<string, mixed>> $items
      */
-    private function buildNotificationReport(array $items, string $fallbackReport, DateTimeImmutable $today): string
+    private function buildNotificationReport(array $items, string $schedule): string
     {
         if (!$this->shouldSummarizeWithOpenAI($items)) {
             $this->logger->info('openai_summary_skipped', [
-                'reason' => $items === [] ? 'No filtered items.' : 'OPENAI_API_KEY is not configured.',
+                'reason' => $this->openAISkipReason($items),
             ]);
-            return $fallbackReport;
+            return $this->reportBuilder->renderReport(null, $schedule);
         }
 
-        $payload = $this->openAIPayload($items);
-        $payloadJson = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $this->logger->info('openai_payload_prepared', [
-            'api_send_count' => count($payload),
-            'json_size_bytes' => $payloadJson === false ? 0 : strlen($payloadJson),
+            'api_send_count' => 1,
+            'schedule_size_bytes' => strlen($schedule),
         ]);
 
         try {
-            $summary = $this->openAIClient?->summarize($items) ?? '';
+            $summary = $this->openAIClient?->summarize($schedule) ?? '';
         } catch (OpenAIException $exception) {
             $this->logger->error('openai_summary_failed', [
                 'error' => $exception->getMessage(),
                 'fallback' => 'local_report',
             ]);
-            return $fallbackReport;
+            return $this->reportBuilder->renderReport(null, $schedule);
         }
 
         $this->logger->info('openai_summary_complete', [
             'summary_length_bytes' => strlen($summary),
         ]);
 
-        return $this->reportBuilder->renderSummary($summary, $today);
+        return $this->reportBuilder->renderReport($summary, $schedule);
     }
 
     /**
@@ -271,34 +422,36 @@ final class DailyReportCommand
     private function shouldSummarizeWithOpenAI(array $items): bool
     {
         return $items !== []
+            && $this->isFeatureEnabled('openai')
             && $this->openAIClient !== null
             && $this->openAIClient->isConfigured();
     }
 
     /**
      * @param array<int, array<string, mixed>> $items
-     * @return array<int, array<string, mixed>>
      */
-    private function openAIPayload(array $items): array
+    private function openAISkipReason(array $items): string
     {
-        $payload = [];
-        foreach (array_slice($items, 0, 100) as $item) {
-            $payload[] = [
-                'source_name' => $item['source_name'] ?? null,
-                'source_role' => $item['source_role'] ?? null,
-                'title' => $item['title'] ?? null,
-                'date' => $item['date'] ?? null,
-                'status' => $item['status'] ?? null,
-                'classification' => $item['classification'] ?? null,
-                'url' => $item['url'] ?? null,
-            ];
+        if ($items === []) {
+            return 'No filtered items.';
         }
 
-        return $payload;
+        if (!$this->isFeatureEnabled('openai')) {
+            return 'OpenAI summary is disabled.';
+        }
+
+        return 'OPENAI_API_KEY is not configured.';
     }
 
     private function sendMailReport(string $report, DateTimeImmutable $today): void
     {
+        if (!$this->isFeatureEnabled('mail')) {
+            $this->logger->info('mail_notification_skipped', [
+                'reason' => 'Mail notification is disabled.',
+            ]);
+            return;
+        }
+
         if ($this->mailNotifier === null || !$this->mailNotifier->isConfigured()) {
             $this->logger->info('mail_notification_skipped', [
                 'reason' => 'SMTP_HOST, MAIL_FROM, or MAIL_TO is not configured.',
@@ -311,5 +464,15 @@ final class DailyReportCommand
             $report
         );
         $this->logger->info('mail_notification_sent');
+    }
+
+    private function isFeatureEnabled(string $key): bool
+    {
+        $section = $this->config[$key] ?? [];
+        if (!is_array($section) || !array_key_exists('enabled', $section)) {
+            return true;
+        }
+
+        return $section['enabled'] === true;
     }
 }

@@ -76,9 +76,10 @@ final class ReportBuilder
         $lines[] = '';
 
         $lines[] = '3. 近日中に確認が必要なこと';
-        $this->appendRows(
+        $this->appendGroupedRows(
             $lines,
             $this->upcomingItems($items),
+            $today,
             true
         );
 
@@ -88,10 +89,7 @@ final class ReportBuilder
             $lines[] = '';
             $lines[] = '4. その他トピックス';
             if ($holidays !== []) {
-                foreach ($holidays as $holiday) {
-                    $date = $this->dateForDisplay($holiday, 'm/d');
-                    $lines[] = sprintf('    【%s】 %s | %s', $date, $holiday['title'] ?? '無題', self::GENRE_HOLIDAY);
-                }
+                $this->appendGroupedHolidayRows($lines, $holidays, $today);
             }
 
             if ($identityDocuments !== []) {
@@ -100,14 +98,7 @@ final class ReportBuilder
                 }
 
                 $lines[] = '  以下の身分証明書の有効期限が近づいています。';
-                foreach ($this->sortRows($identityDocuments, true) as $identityDocument) {
-                    $lines[] = sprintf(
-                        '  【%s】%s | %s',
-                        $this->dateText($identityDocument, true),
-                        $identityDocument['title'] ?? '無題',
-                        $this->groupName($identityDocument)
-                    );
-                }
+                $this->appendGroupedRows($lines, $identityDocuments, $today, true);
             }
         }
 
@@ -230,6 +221,55 @@ final class ReportBuilder
                 $item['title'] ?? '無題',
                 $this->groupName($item)
             );
+        }
+    }
+
+    /**
+     * @param array<int, string> $lines
+     * @param array<int, array<string, mixed>> $items
+     */
+    private function appendGroupedRows(array &$lines, array $items, DateTimeImmutable $today, bool $includeDate): void
+    {
+        if ($items === []) {
+            $lines[] = '  該当なし';
+            return;
+        }
+
+        $currentDate = null;
+        foreach ($this->sortRows($items, $includeDate) as $item) {
+            $start = $this->dateTimeFromItem($item, 'date_start');
+            $dateKey = $this->dateGroupKey($start);
+            if ($dateKey !== $currentDate) {
+                $lines[] = '・' . $this->relativeDateLabel($start, $today);
+                $currentDate = $dateKey;
+            }
+
+            $lines[] = sprintf(
+                '  【%s】%s | %s',
+                $this->dateText($item, $includeDate),
+                $item['title'] ?? '無題',
+                $this->groupName($item)
+            );
+        }
+    }
+
+    /**
+     * @param array<int, string> $lines
+     * @param array<int, array<string, mixed>> $items
+     */
+    private function appendGroupedHolidayRows(array &$lines, array $items, DateTimeImmutable $today): void
+    {
+        $currentDate = null;
+        foreach ($this->sortRows($items, true) as $holiday) {
+            $start = $this->dateTimeFromItem($holiday, 'date_start');
+            $dateKey = $this->dateGroupKey($start);
+            if ($dateKey !== $currentDate) {
+                $lines[] = '・' . $this->relativeDateLabel($start, $today);
+                $currentDate = $dateKey;
+            }
+
+            $date = $this->dateForDisplay($holiday, 'm/d');
+            $lines[] = sprintf('    【%s】 %s | %s', $date, $holiday['title'] ?? '無題', self::GENRE_HOLIDAY);
         }
     }
 
@@ -363,6 +403,41 @@ final class ReportBuilder
         }
 
         return $start->format($format);
+    }
+
+    private function dateGroupKey(?DateTimeImmutable $date): string
+    {
+        if ($date === null) {
+            return '';
+        }
+
+        return $date->setTimezone($this->timezone)->format('Y-m-d');
+    }
+
+    private function relativeDateLabel(?DateTimeImmutable $date, DateTimeImmutable $today): string
+    {
+        if ($date === null) {
+            return '日付不明';
+        }
+
+        $date = $date->setTimezone($this->timezone);
+        $today = $today->setTimezone($this->timezone);
+        $targetDate = DateTimeImmutable::createFromFormat('!Y-m-d', $date->format('Y-m-d'), $this->timezone);
+        $baseDate = DateTimeImmutable::createFromFormat('!Y-m-d', $today->format('Y-m-d'), $this->timezone);
+        if (!$targetDate || !$baseDate) {
+            return '日付不明';
+        }
+
+        $days = (int) $baseDate->diff($targetDate)->format('%r%a');
+        $relative = match ($days) {
+            -1 => '昨日',
+            0 => '今日',
+            1 => '明日',
+            2 => '明後日',
+            default => $days > 0 ? sprintf('%d日後', $days) : sprintf('%d日前', abs($days)),
+        };
+
+        return sprintf('%s（%s）', $relative, $targetDate->format('D'));
     }
 
     /**

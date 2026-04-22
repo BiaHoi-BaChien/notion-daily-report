@@ -288,6 +288,37 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringNotContainsString('Role-only identity document | 身分証明書', $report);
     }
 
+    public function testRendersRelativeDateGroupLabelsForUpcomingAndOtherTopics(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $today = new DateTimeImmutable('2026-04-22', $timezone);
+        $builder = new ReportBuilder($timezone);
+
+        $holiday = $this->extractedItem('昭和の日', '2026-04-29', 'カレンダー', '今日以降1週間の予定の確認', '2026-04-29');
+        $holiday['genre'] = '祝日';
+
+        $items = $builder->classifyAndSort([
+            $this->extractedItem('楽天ペイ未契約店舗の表示確認', '2026-04-23', 'ToDo', '今日やるべき作業の確認', '2026-04-23T18:00:00+07:00'),
+            $this->extractedItem('Notion 新機能紹介ウェビナー', '2026-04-24', 'カレンダー', '今日以降1週間の予定の確認', '2026-04-24T10:00:00+07:00'),
+            $holiday,
+            $this->extractedItem('TECHCOMBANK(Debid Card)', '2026-06-01', '身分証明書', '期限切れが迫っている身分証明書の確認', '2026-06-01'),
+        ], $today);
+
+        $report = $builder->renderSchedule($items, $today);
+
+        self::assertStringContainsString('3. 近日中に確認が必要なこと', $report);
+        self::assertStringContainsString('・明日（Thu）', $report);
+        self::assertStringContainsString('【04/23 18:00】楽天ペイ未契約店舗の表示確認 | その他', $report);
+        self::assertStringContainsString('・明後日（Fri）', $report);
+        self::assertStringContainsString('【04/24 10:00】Notion 新機能紹介ウェビナー | その他', $report);
+        self::assertStringContainsString('4. その他トピックス', $report);
+        self::assertStringContainsString('・7日後（Wed）', $report);
+        self::assertStringContainsString('    【04/29】 昭和の日 | 祝日', $report);
+        self::assertStringContainsString('  以下の身分証明書の有効期限が近づいています。', $report);
+        self::assertStringContainsString('・40日後（Mon）', $report);
+        self::assertStringContainsString('【06/01】TECHCOMBANK(Debid Card) | 身分証明書', $report);
+    }
+
     public function testUsesOpenAISummaryForSlackAndMailWhenConfigured(): void
     {
         $timezone = new DateTimeZone('Asia/Saigon');

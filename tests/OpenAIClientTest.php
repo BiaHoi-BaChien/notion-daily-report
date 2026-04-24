@@ -46,6 +46,11 @@ final class OpenAIClientTest extends TestCase
         $body = json_decode((string) $history[0]['request']->getBody(), true);
         self::assertSame('gpt-5.2', $body['model']);
         self::assertStringContainsString('整形や再分類はしない', $body['instructions']);
+        self::assertStringContainsString('先頭の日付・曜日行', $body['instructions']);
+        self::assertStringContainsString('YYYY年MM月DD日（●）', $body['instructions']);
+        self::assertStringContainsString('軽い挨拶', $body['instructions']);
+        self::assertStringContainsString('祝日・記念日・イベント名', $body['instructions']);
+        self::assertStringContainsString('入力に明示されていない限り出力しない', $body['instructions']);
         self::assertStringContainsString('前向きに今日一日を始められる', $body['instructions']);
         self::assertStringContainsString('予定の再掲は出力しない', $body['instructions']);
         self::assertStringContainsString('請求書確認', $body['input']);

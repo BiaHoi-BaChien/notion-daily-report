@@ -280,6 +280,7 @@ final class DailyReportCommandTest extends TestCase
 
         $report = $builder->renderSchedule($items, $today);
 
+        self::assertStringStartsWith('2026年04月17日（金）' . PHP_EOL, $report);
         self::assertStringContainsString('【09:00】Exact todo | その他', $report);
         self::assertStringNotContainsString('Role-only todo', $report);
         self::assertStringContainsString('Exact project task | その他', $report);
@@ -307,15 +308,15 @@ final class DailyReportCommandTest extends TestCase
         $report = $builder->renderSchedule($items, $today);
 
         self::assertStringContainsString('3. 近日中に確認が必要なこと', $report);
-        self::assertStringContainsString('・明日（Thu）', $report);
+        self::assertStringContainsString('・明日（木）', $report);
         self::assertStringContainsString('【04/23 18:00】楽天ペイ未契約店舗の表示確認 | その他', $report);
-        self::assertStringContainsString('・明後日（Fri）', $report);
+        self::assertStringContainsString('・明後日（金）', $report);
         self::assertStringContainsString('【04/24 10:00】Notion 新機能紹介ウェビナー | その他', $report);
         self::assertStringContainsString('4. その他トピックス', $report);
-        self::assertStringContainsString('・7日後（Wed）', $report);
+        self::assertStringContainsString('・7日後（水）', $report);
         self::assertStringContainsString('    【04/29】 昭和の日 | 祝日', $report);
         self::assertStringContainsString('  以下の身分証明書の有効期限が近づいています。', $report);
-        self::assertStringContainsString('・40日後（Mon）', $report);
+        self::assertStringContainsString('・40日後（月）', $report);
         self::assertStringContainsString('【06/01】TECHCOMBANK(Debid Card) | 身分証明書', $report);
     }
 
@@ -354,6 +355,7 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringContainsString('Today task', $report);
         self::assertSame($report, $mail->sentBody);
         self::assertSame('Notion Daily Report 2026-04-16', $mail->sentSubject);
+        self::assertStringContainsString('2026年04月16日（木）', $openai->receivedSchedule);
         self::assertStringContainsString('Today task', $openai->receivedSchedule);
     }
 

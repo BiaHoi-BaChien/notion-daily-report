@@ -58,6 +58,7 @@ final class ReportBuilder
     public function renderSchedule(array $items, DateTimeImmutable $today): string
     {
         $lines = [];
+        $lines[] = $this->todayHeader($today);
 
         $lines[] = '1. 今日確認するべきToDo';
         $this->appendRows(
@@ -113,6 +114,13 @@ final class ReportBuilder
         }
 
         return sprintf("%s%s%s%s", $comment, PHP_EOL . PHP_EOL, rtrim($schedule), PHP_EOL);
+    }
+
+    private function todayHeader(DateTimeImmutable $today): string
+    {
+        $today = $today->setTimezone($this->timezone);
+
+        return sprintf('%s（%s）', $today->format('Y年m月d日'), $this->weekdayLabel($today));
     }
 
     /**
@@ -437,7 +445,14 @@ final class ReportBuilder
             default => $days > 0 ? sprintf('%d日後', $days) : sprintf('%d日前', abs($days)),
         };
 
-        return sprintf('%s（%s）', $relative, $targetDate->format('D'));
+        return sprintf('%s（%s）', $relative, $this->weekdayLabel($targetDate));
+    }
+
+    private function weekdayLabel(DateTimeImmutable $date): string
+    {
+        $weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+
+        return $weekdays[(int) $date->setTimezone($this->timezone)->format('w')];
     }
 
     /**

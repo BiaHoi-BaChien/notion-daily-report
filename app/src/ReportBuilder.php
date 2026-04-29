@@ -362,7 +362,7 @@ final class ReportBuilder
         $hasEndTime = ($item['date_end_has_time'] ?? false) === true;
 
         if (!$includeDate && !$hasStartTime) {
-            return '';
+            return '終日';
         }
 
         $startFormat = $includeDate ? ($hasStartTime ? 'm/d H:i' : 'm/d') : 'H:i';

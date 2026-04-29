@@ -205,7 +205,7 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringContainsString('1. 今日確認するべきToDo', $report);
         self::assertStringContainsString('【09:30】決済確認 | 決済システム', $report);
         self::assertStringContainsString('2. 今日が期限の案件のタスク', $report);
-        self::assertStringContainsString('【】決済追加確認 | 決済システム', $report);
+        self::assertStringContainsString('【終日】決済追加確認 | 決済システム', $report);
         self::assertStringContainsString('楽天ペイV2', $report);
         self::assertStringContainsString('楽天ペイ表示確認 | 楽天ペイV2', $report);
         self::assertStringContainsString('3. 近日中に確認が必要なこと', $report);

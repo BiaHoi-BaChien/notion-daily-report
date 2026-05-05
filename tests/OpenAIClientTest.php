@@ -50,7 +50,11 @@ final class OpenAIClientTest extends TestCase
         self::assertStringContainsString('YYYY年MM月DD日（●）', $body['instructions']);
         self::assertStringContainsString('軽い挨拶', $body['instructions']);
         self::assertStringContainsString('祝日・記念日・イベント名', $body['instructions']);
-        self::assertStringContainsString('入力に明示されていない限り出力しない', $body['instructions']);
+        self::assertStringContainsString('日本・ベトナム', $body['instructions']);
+        self::assertStringContainsString('挨拶のきっかけ', $body['instructions']);
+        self::assertStringContainsString('入力にない予定、イベント参加、休業予定などは推測しない', $body['instructions']);
+        self::assertStringContainsString('ユーザーの子供の学校予定', $body['instructions']);
+        self::assertStringContainsString('仕事や生活の予定とは分けて', $body['instructions']);
         self::assertStringContainsString('前向きに今日一日を始められる', $body['instructions']);
         self::assertStringContainsString('予定の再掲は出力しない', $body['instructions']);
         self::assertStringContainsString('請求書確認', $body['input']);

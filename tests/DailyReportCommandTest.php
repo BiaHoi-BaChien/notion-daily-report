@@ -222,6 +222,47 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringNotContainsString('https://notion.example', $report);
     }
 
+    public function testRendersTodayChildLunchInOtherTopics(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $slack = new StubSlackNotifier();
+
+        $command = new DailyReportCommand(
+            $this->childLunchConfig(),
+            new StubNotionClient([
+                'child-lunch-source' => [
+                    $this->childLunchPage('牛めし（A券：牛めし）', '2026-05-11', '月', 'S', 'つゆだく、ネギ抜き'),
+                    $this->childLunchPage('', '2026-05-11', '月', '', ''),
+                    $this->childLunchPage('カレー', '2026-05-12', '火', 'M', ''),
+                ],
+            ]),
+            new PropertyExtractor($timezone),
+            new DateFilter($timezone),
+            new ReportBuilder($timezone),
+            new Logger($logPath, $timezone),
+            $timezone,
+            false,
+            $slack
+        );
+
+        ob_start();
+        $exitCode = $command->run(['daily_report.php', '--date=2026-05-11']);
+        $output = (string) ob_get_clean();
+        $report = (string) $slack->sentText;
+
+        self::assertSame(0, $exitCode);
+        self::assertSame('', $output);
+        self::assertStringContainsString('4. その他トピックス', $report);
+        self::assertStringContainsString(
+            '今日の子供のお弁当は「牛めし（A券：牛めし） [S] つゆだく、ネギ抜き」です。',
+            $report
+        );
+        self::assertStringNotContainsString('05/11（月） 牛めし', $report);
+        self::assertSame(1, substr_count($report, '今日の子供のお弁当は'));
+        self::assertStringNotContainsString('カレー', $report);
+    }
+
     public function testResolvesRelationProjectTitlesForGrouping(): void
     {
         $timezone = new DateTimeZone('Asia/Saigon');
@@ -741,6 +782,35 @@ final class DailyReportCommandTest extends TestCase
     /**
      * @return array<string, mixed>
      */
+    private function childLunchConfig(): array
+    {
+        return [
+            'sources' => [
+                [
+                    'enabled' => true,
+                    'name' => '子供のお弁当',
+                    'role' => '今日の子供のお弁当の献立確認',
+                    'data_source_id' => 'child-lunch-source',
+                    'date_property' => '日付',
+                    'status_property' => '',
+                    'title_property' => '品名',
+                    'lookback_days' => 0,
+                    'lookahead_days' => 0,
+                    'exclude_statuses' => [],
+                    'filter_property_ids' => [],
+                    'extra_properties' => [
+                        'weekday' => '曜日',
+                        'size' => 'サイズ',
+                        'note' => '備考',
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     private function page(string $title, string $date, ?string $status): array
     {
         return [
@@ -894,6 +964,46 @@ final class DailyReportCommandTest extends TestCase
                 '状態' => [
                     'type' => 'status',
                     'status' => $status === null ? null : ['name' => $status],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function childLunchPage(string $name, string $date, string $weekday, string $size, string $note): array
+    {
+        return [
+            'id' => strtolower(rawurlencode($name)),
+            'url' => 'https://notion.example/' . rawurlencode($name),
+            'last_edited_time' => '2026-05-11T00:00:00.000Z',
+            'properties' => [
+                '品名' => [
+                    'type' => 'title',
+                    'title' => [
+                        ['plain_text' => $name],
+                    ],
+                ],
+                '日付' => [
+                    'type' => 'date',
+                    'date' => ['start' => $date],
+                ],
+                '曜日' => [
+                    'type' => 'rich_text',
+                    'rich_text' => [
+                        ['plain_text' => $weekday],
+                    ],
+                ],
+                'サイズ' => [
+                    'type' => 'select',
+                    'select' => ['name' => $size],
+                ],
+                '備考' => [
+                    'type' => 'rich_text',
+                    'rich_text' => $note === '' ? [] : [
+                        ['plain_text' => $note],
+                    ],
                 ],
             ],
         ];

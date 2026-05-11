@@ -31,7 +31,7 @@ final class PropertyExtractor
         return [
             'source_name' => (string) $source['name'],
             'source_role' => (string) $source['role'],
-            'title' => $this->extractTitle($properties),
+            'title' => $this->extractTitle($properties, $source['title_property'] ?? null),
             'date' => $dateInfo['date'],
             'date_start' => $dateInfo['date_start'],
             'date_end' => $dateInfo['date_end'],
@@ -41,6 +41,7 @@ final class PropertyExtractor
             'genre' => $this->extractGenre($properties, $source['genre_property'] ?? null),
             'project' => $this->extractProject($properties, $source['project_property'] ?? null),
             'project_relation_ids' => $this->extractRelationIds($properties, $source['project_property'] ?? null),
+            'extra' => $this->extractExtraProperties($properties, $source['extra_properties'] ?? []),
             'classification' => null,
             'url' => $page['url'] ?? null,
             'last_edited_time' => $page['last_edited_time'] ?? null,
@@ -50,8 +51,15 @@ final class PropertyExtractor
     /**
      * @param array<string, mixed> $properties
      */
-    private function extractTitle(array $properties): string
+    private function extractTitle(array $properties, mixed $propertyName = null): string
     {
+        if (is_string($propertyName) && trim($propertyName) !== '') {
+            $namedTitle = $this->extractOptionalTextProperty($properties, $propertyName);
+            if ($namedTitle !== null) {
+                return $namedTitle;
+            }
+        }
+
         foreach ($properties as $property) {
             if (($property['type'] ?? null) === 'title') {
                 $chunks = $property['title'] ?? [];
@@ -69,6 +77,29 @@ final class PropertyExtractor
         }
 
         return '無題';
+    }
+
+    /**
+     * @param array<string, mixed> $properties
+     * @param mixed $propertyNames
+     * @return array<string, ?string>
+     */
+    private function extractExtraProperties(array $properties, mixed $propertyNames): array
+    {
+        if (!is_array($propertyNames)) {
+            return [];
+        }
+
+        $extra = [];
+        foreach ($propertyNames as $key => $propertyName) {
+            if (!is_string($key) || !is_string($propertyName) || trim($propertyName) === '') {
+                continue;
+            }
+
+            $extra[$key] = $this->extractOptionalTextProperty($properties, $propertyName);
+        }
+
+        return $extra;
     }
 
     /**

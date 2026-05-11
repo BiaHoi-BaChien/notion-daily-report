@@ -81,6 +81,8 @@ Update `app/config/app.php` if your Notion property names differ from the defaul
 - `status_property`: status or select property used for exclusion; set to `null` for sources without status
 - `project_property`: optional project name property used for grouping ToDo and project tasks
 - `genre_property`: optional calendar genre property used for grouping school/life plans and holiday topics
+- `title_property`: optional title/name property used instead of the first Notion title property
+- `extra_properties`: optional text properties used by source-specific renderers, such as the child lunch weekday, size, and note
 - `exclude_statuses`: statuses removed before reporting
 - `lookback_days` / `lookahead_days`: date window around today
 

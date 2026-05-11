@@ -76,6 +76,23 @@ $baseSources = [
         'exclude_statuses' => ['無効'],
         'filter_property_ids' => [],
     ],
+    [
+        'enabled' => true,
+        'name' => '子供のお弁当',
+        'role' => '今日の子供のお弁当の献立確認',
+        'date_property' => '日付',
+        'status_property' => '',
+        'title_property' => '品名',
+        'lookback_days' => 0,
+        'lookahead_days' => 0,
+        'exclude_statuses' => [],
+        'filter_property_ids' => [],
+        'extra_properties' => [
+            'weekday' => '曜日',
+            'size' => 'サイズ',
+            'note' => '備考',
+        ],
+    ],
 ];
 
 $sources = \App\SourceConfigBuilder::buildSources($dataSourceIds, $baseSources);

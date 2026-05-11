@@ -13,6 +13,7 @@ final class ReportBuilder
     private const SOURCE_PROJECT_TASK = '各案件のタスク';
     private const SOURCE_CALENDAR = 'カレンダー';
     private const SOURCE_IDENTITY_DOCUMENT = '身分証明書';
+    private const SOURCE_CHILD_LUNCH = '子供のお弁当';
     private const GROUP_OTHER = 'その他';
     private const GROUP_SCHOOL = '学校';
     private const GROUP_LIFE = '生活';
@@ -85,16 +86,30 @@ final class ReportBuilder
         );
 
         $holidays = $this->holidayItems($items);
+        $childLunches = $this->childLunchItems($items);
         $identityDocuments = $this->identityDocumentItems($items);
-        if ($holidays !== [] || $identityDocuments !== []) {
+        if ($holidays !== [] || $childLunches !== [] || $identityDocuments !== []) {
             $lines[] = '';
             $lines[] = '4. その他トピックス';
             if ($holidays !== []) {
                 $this->appendGroupedHolidayRows($lines, $holidays, $today);
             }
 
-            if ($identityDocuments !== []) {
+            if ($childLunches !== []) {
                 if ($holidays !== []) {
+                    $lines[] = '';
+                }
+
+                foreach ($this->sortRows($childLunches, true) as $childLunch) {
+                    $text = $this->childLunchText($childLunch);
+                    if ($text !== null) {
+                        $lines[] = sprintf('  今日の子供のお弁当は「%s」です。', $text);
+                    }
+                }
+            }
+
+            if ($identityDocuments !== []) {
+                if ($holidays !== [] || $childLunches !== []) {
                     $lines[] = '';
                 }
 
@@ -155,6 +170,7 @@ final class ReportBuilder
             fn (array $item): bool => ($item['classification'] ?? null) === 'today'
                 && !$this->isHoliday($item)
                 && !$this->isIdentityDocument($item)
+                && !$this->isChildLunch($item)
                 && ($this->isTodo($item) || $this->isCalendar($item))
         ));
     }
@@ -183,6 +199,7 @@ final class ReportBuilder
             fn (array $item): bool => ($item['classification'] ?? null) === 'upcoming'
                 && !$this->isHoliday($item)
                 && !$this->isIdentityDocument($item)
+                && !$this->isChildLunch($item)
         ));
     }
 
@@ -207,6 +224,19 @@ final class ReportBuilder
         return array_values(array_filter(
             $items,
             fn (array $item): bool => $this->isIdentityDocument($item)
+        ));
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function childLunchItems(array $items): array
+    {
+        return array_values(array_filter(
+            $items,
+            fn (array $item): bool => $this->isChildLunch($item)
+                && ($item['classification'] ?? null) === 'today'
         ));
     }
 
@@ -458,6 +488,35 @@ final class ReportBuilder
     /**
      * @param array<string, mixed> $item
      */
+    private function childLunchText(array $item): ?string
+    {
+        $extra = is_array($item['extra'] ?? null) ? $item['extra'] : [];
+        $title = trim((string) ($item['title'] ?? ''));
+        if ($title === '' || $title === '無題') {
+            return null;
+        }
+
+        $parts = [$title];
+
+        $size = trim((string) ($extra['size'] ?? ''));
+        if ($size !== '') {
+            $parts[] = sprintf('[%s]', $size);
+        }
+
+        $note = trim((string) ($extra['note'] ?? ''));
+        if ($note !== '') {
+            $parts[] = $note;
+        }
+
+        return implode(' ', array_values(array_filter(
+            $parts,
+            static fn (string $part): bool => trim($part) !== ''
+        )));
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
     private function dateTimeFromItem(array $item, string $key): ?DateTimeImmutable
     {
         if (!isset($item[$key]) || !is_string($item[$key]) || trim($item[$key]) === '') {
@@ -501,6 +560,14 @@ final class ReportBuilder
     private function isIdentityDocument(array $item): bool
     {
         return ($item['source_name'] ?? null) === self::SOURCE_IDENTITY_DOCUMENT;
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function isChildLunch(array $item): bool
+    {
+        return ($item['source_name'] ?? null) === self::SOURCE_CHILD_LUNCH;
     }
 
     /**

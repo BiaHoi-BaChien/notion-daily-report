@@ -50,10 +50,10 @@ final class DailyReportCommandTest extends TestCase
 
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
-        self::assertStringContainsString('1. 今日確認するべきToDo', $report);
+        self::assertStringContainsString('🔥 今日の予定', $report);
         self::assertStringContainsString('Today task', $report);
         self::assertStringNotContainsString('Old task', $report);
-        self::assertStringContainsString('3. 近日中に確認が必要なこと', $report);
+        self::assertStringContainsString('📌 近日確認', $report);
         self::assertStringContainsString('Upcoming task', $report);
         self::assertFileExists($logPath);
     }
@@ -113,9 +113,9 @@ final class DailyReportCommandTest extends TestCase
 
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
-        self::assertStringContainsString('1. 今日確認するべきToDo', $report);
+        self::assertStringContainsString('🔥 今日の予定', $report);
         self::assertStringContainsString('Today task', $report);
-        self::assertStringContainsString('3. 近日中に確認が必要なこと', $report);
+        self::assertStringContainsString('📌 近日確認', $report);
         self::assertStringContainsString('Meeting prep', $report);
     }
 
@@ -202,22 +202,25 @@ final class DailyReportCommandTest extends TestCase
 
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
-        self::assertStringContainsString('1. 今日確認するべきToDo', $report);
-        self::assertStringContainsString('【09:30】決済確認 | 決済システム', $report);
-        self::assertStringContainsString('2. 今日が期限の案件のタスク', $report);
-        self::assertStringContainsString('【終日】決済追加確認 | 決済システム', $report);
+        self::assertStringContainsString('🔥 今日の予定', $report);
+        self::assertStringContainsString('・09:30｜決済確認', $report);
+        self::assertStringNotContainsString('決済確認｜決済システム', $report);
+        self::assertStringContainsString('⚠ 本日期限', $report);
+        self::assertStringContainsString('・決済追加確認｜決済システム', $report);
         self::assertStringContainsString('楽天ペイV2', $report);
-        self::assertStringContainsString('楽天ペイ表示確認 | 楽天ペイV2', $report);
-        self::assertStringContainsString('3. 近日中に確認が必要なこと', $report);
-        self::assertStringContainsString('【04/20 10:00】来週の確認 | 決済システム', $report);
-        self::assertStringContainsString('】来週の確認 | 決済システム', $report);
-        self::assertStringContainsString('【04/20 10:00 - 11:00】MTG K&G | その他', $report);
-        self::assertStringContainsString('【04/20 16:00】委員会活動 | 学校', $report);
-        self::assertStringContainsString('4. その他トピックス', $report);
+        self::assertStringContainsString('楽天ペイ表示確認｜楽天ペイV2', $report);
+        self::assertStringContainsString('📌 近日確認', $report);
+        self::assertStringContainsString('・10:00｜来週の確認｜決済システム', $report);
+        self::assertStringContainsString('・10:00 - 11:00｜MTG K&G', $report);
+        self::assertStringNotContainsString('MTG K&G｜その他', $report);
+        self::assertStringContainsString('・16:00｜委員会活動｜学校', $report);
+        self::assertStringContainsString('💡 その他トピックス', $report);
         self::assertStringNotContainsString('  以下の通り祝日があります。', $report);
-        self::assertStringContainsString('    【04/21】 ベトナム暦的吉日 | 祝日', $report);
-        self::assertStringContainsString('  以下の身分証明書の有効期限が近づいています。', $report);
-        self::assertStringContainsString('【05/01】在留カード | 身分証明書', $report);
+        self::assertStringContainsString('・ベトナム暦的吉日', $report);
+        self::assertStringNotContainsString('ベトナム暦的吉日｜祝日', $report);
+        self::assertStringContainsString('以下の身分証明書の有効期限が近づいています。', $report);
+        self::assertStringContainsString('・在留カード', $report);
+        self::assertStringNotContainsString('在留カード｜身分証明書', $report);
         self::assertSame(1, substr_count($report, '在留カード'));
         self::assertStringNotContainsString('https://notion.example', $report);
     }
@@ -253,7 +256,7 @@ final class DailyReportCommandTest extends TestCase
 
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
-        self::assertStringContainsString('4. その他トピックス', $report);
+        self::assertStringContainsString('💡 その他トピックス', $report);
         self::assertStringContainsString(
             '今日の子供のお弁当は「牛めし（A券：牛めし） [S] つゆだく、ネギ抜き」です。',
             $report
@@ -300,9 +303,9 @@ final class DailyReportCommandTest extends TestCase
 
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
-        self::assertStringContainsString('2. 今日が期限の案件のタスク', $report);
-        self::assertStringContainsString('楽天ペイ表示確認 | 楽天ペイV2', $report);
-        self::assertStringNotContainsString('楽天ペイ表示確認 | その他', $report);
+        self::assertStringContainsString('⚠ 本日期限', $report);
+        self::assertStringContainsString('楽天ペイ表示確認｜楽天ペイV2', $report);
+        self::assertStringNotContainsString('楽天ペイ表示確認｜その他', $report);
     }
 
     public function testDeterminesSourceTypeOnlyFromSourceName(): void
@@ -322,12 +325,12 @@ final class DailyReportCommandTest extends TestCase
         $report = $builder->renderSchedule($items, $today);
 
         self::assertStringStartsWith('2026年04月17日（金）' . PHP_EOL, $report);
-        self::assertStringContainsString('【09:00】Exact todo | その他', $report);
+        self::assertStringContainsString('・09:00｜Exact todo', $report);
         self::assertStringNotContainsString('Role-only todo', $report);
-        self::assertStringContainsString('Exact project task | その他', $report);
+        self::assertStringContainsString('・Exact project task', $report);
         self::assertStringNotContainsString('Role-only project task', $report);
-        self::assertStringContainsString('【04/18】Role-only identity document | その他', $report);
-        self::assertStringNotContainsString('Role-only identity document | 身分証明書', $report);
+        self::assertStringContainsString('・Role-only identity document', $report);
+        self::assertStringNotContainsString('Role-only identity document｜身分証明書', $report);
     }
 
     public function testRendersRelativeDateGroupLabelsForUpcomingAndOtherTopics(): void
@@ -348,17 +351,21 @@ final class DailyReportCommandTest extends TestCase
 
         $report = $builder->renderSchedule($items, $today);
 
-        self::assertStringContainsString('3. 近日中に確認が必要なこと', $report);
-        self::assertStringContainsString('・明日（木）', $report);
-        self::assertStringContainsString('【04/23 18:00】楽天ペイ未契約店舗の表示確認 | その他', $report);
-        self::assertStringContainsString('・明後日（金）', $report);
-        self::assertStringContainsString('【04/24 10:00】Notion 新機能紹介ウェビナー | その他', $report);
-        self::assertStringContainsString('4. その他トピックス', $report);
-        self::assertStringContainsString('・7日後（水）', $report);
-        self::assertStringContainsString('    【04/29】 昭和の日 | 祝日', $report);
-        self::assertStringContainsString('  以下の身分証明書の有効期限が近づいています。', $report);
-        self::assertStringContainsString('・40日後（月）', $report);
-        self::assertStringContainsString('【06/01】TECHCOMBANK(Debid Card) | 身分証明書', $report);
+        self::assertStringContainsString('📌 近日確認', $report);
+        self::assertStringContainsString('明日 04/23（木）', $report);
+        self::assertStringContainsString('・18:00｜楽天ペイ未契約店舗の表示確認', $report);
+        self::assertStringNotContainsString('楽天ペイ未契約店舗の表示確認｜その他', $report);
+        self::assertStringContainsString('あさって 04/24（金）', $report);
+        self::assertStringContainsString('・10:00｜Notion 新機能紹介ウェビナー', $report);
+        self::assertStringContainsString('04/29（水）', $report);
+        self::assertStringNotContainsString('7日後', $report);
+        self::assertStringContainsString('・昭和の日', $report);
+        self::assertStringNotContainsString('昭和の日｜祝日', $report);
+        self::assertStringContainsString('💡 その他トピックス', $report);
+        self::assertStringContainsString('以下の身分証明書の有効期限が近づいています。', $report);
+        self::assertStringContainsString('06/01（月） あと40日', $report);
+        self::assertStringContainsString('・TECHCOMBANK(Debid Card)', $report);
+        self::assertStringNotContainsString('TECHCOMBANK(Debid Card)｜身分証明書', $report);
     }
 
     public function testUsesOpenAISummaryForSlackAndMailWhenConfigured(): void
@@ -573,7 +580,8 @@ final class DailyReportCommandTest extends TestCase
         ob_end_clean();
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('決済システム', $openai->receivedSchedule);
+        self::assertStringContainsString('・Today task', $openai->receivedSchedule);
+        self::assertStringNotContainsString('Today task｜決済システム', $openai->receivedSchedule);
     }
 
     public function testPassesCalendarGenreToOpenAISummary(): void
@@ -610,7 +618,7 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringContainsString('お子様の学校の予定があります。', $report);
         self::assertSame($report, $mail->sentBody);
         self::assertStringContainsString('委員会活動', $openai->receivedSchedule);
-        self::assertStringContainsString('委員会活動 | 学校', $openai->receivedSchedule);
+        self::assertStringContainsString('委員会活動｜学校', $openai->receivedSchedule);
     }
 
     public function testFallsBackToLocalReportWhenOpenAISummaryFails(): void
@@ -642,7 +650,7 @@ final class DailyReportCommandTest extends TestCase
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
         self::assertStringContainsString('Today task', $report);
-        self::assertStringContainsString('1. 今日確認するべきToDo', $report);
+        self::assertStringContainsString('🔥 今日の予定', $report);
         self::assertStringContainsString('openai_summary_failed', (string) file_get_contents($logPath));
     }
 

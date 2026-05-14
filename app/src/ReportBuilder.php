@@ -18,6 +18,7 @@ final class ReportBuilder
     private const GROUP_SCHOOL = '学校';
     private const GROUP_LIFE = '生活';
     private const GENRE_HOLIDAY = '祝日';
+    private const SECTION_SEPARATOR = '━━━━━━━━━━';
 
     private const PRIORITY = [
         'overdue' => 1,
@@ -61,60 +62,55 @@ final class ReportBuilder
         $lines = [];
         $lines[] = $this->todayHeader($today);
 
-        $lines[] = '1. 今日確認するべきToDo';
+        $this->appendSectionHeader($lines, '🔥 今日の予定');
         $this->appendRows(
             $lines,
             $this->todayTodoItems($items),
+            false,
             false
         );
         $lines[] = '';
 
-        $lines[] = '2. 今日が期限の案件のタスク';
+        $this->appendSectionHeader($lines, '⚠ 本日期限');
         $this->appendRows(
             $lines,
             $this->todayProjectTaskItems($items),
-            false
+            false,
+            true
         );
         $lines[] = '';
 
-        $lines[] = '3. 近日中に確認が必要なこと';
+        $this->appendSectionHeader($lines, '📌 近日確認');
         $this->appendGroupedRows(
             $lines,
             $this->upcomingItems($items),
             $today,
+            true,
             true
         );
 
-        $holidays = $this->holidayItems($items);
         $childLunches = $this->childLunchItems($items);
         $identityDocuments = $this->identityDocumentItems($items);
-        if ($holidays !== [] || $childLunches !== [] || $identityDocuments !== []) {
+        if ($childLunches !== [] || $identityDocuments !== []) {
             $lines[] = '';
-            $lines[] = '4. その他トピックス';
-            if ($holidays !== []) {
-                $this->appendGroupedHolidayRows($lines, $holidays, $today);
-            }
+            $this->appendSectionHeader($lines, '💡 その他トピックス');
 
             if ($childLunches !== []) {
-                if ($holidays !== []) {
-                    $lines[] = '';
-                }
-
                 foreach ($this->sortRows($childLunches, true) as $childLunch) {
                     $text = $this->childLunchText($childLunch);
                     if ($text !== null) {
-                        $lines[] = sprintf('  今日の子供のお弁当は「%s」です。', $text);
+                        $lines[] = sprintf('今日の子供のお弁当は「%s」です。', $text);
                     }
                 }
             }
 
             if ($identityDocuments !== []) {
-                if ($holidays !== [] || $childLunches !== []) {
+                if ($childLunches !== []) {
                     $lines[] = '';
                 }
 
-                $lines[] = '  以下の身分証明書の有効期限が近づいています。';
-                $this->appendGroupedRows($lines, $identityDocuments, $today, true);
+                $lines[] = '以下の身分証明書の有効期限が近づいています。';
+                $this->appendIdentityDocumentRows($lines, $identityDocuments, $today);
             }
         }
 
@@ -197,33 +193,8 @@ final class ReportBuilder
         return array_values(array_filter(
             $items,
             fn (array $item): bool => ($item['classification'] ?? null) === 'upcoming'
-                && !$this->isHoliday($item)
                 && !$this->isIdentityDocument($item)
                 && !$this->isChildLunch($item)
-        ));
-    }
-
-    /**
-     * @param array<int, array<string, mixed>> $items
-     * @return array<int, array<string, mixed>>
-     */
-    private function holidayItems(array $items): array
-    {
-        return array_values(array_filter(
-            $items,
-            fn (array $item): bool => $this->isCalendar($item) && $this->isHoliday($item)
-        ));
-    }
-
-    /**
-     * @param array<int, array<string, mixed>> $items
-     * @return array<int, array<string, mixed>>
-     */
-    private function identityDocumentItems(array $items): array
-    {
-        return array_values(array_filter(
-            $items,
-            fn (array $item): bool => $this->isIdentityDocument($item)
         ));
     }
 
@@ -242,23 +213,40 @@ final class ReportBuilder
 
     /**
      * @param array<int, string> $lines
+     */
+    private function appendSectionHeader(array &$lines, string $title): void
+    {
+        $lines[] = self::SECTION_SEPARATOR;
+        $lines[] = $title;
+        $lines[] = self::SECTION_SEPARATOR;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function identityDocumentItems(array $items): array
+    {
+        return array_values(array_filter(
+            $items,
+            fn (array $item): bool => $this->isIdentityDocument($item)
+        ));
+    }
+
+    /**
+     * @param array<int, string> $lines
      * @param array<int, array<string, mixed>> $items
      */
-    private function appendRows(array &$lines, array $items, bool $includeDate): void
+    private function appendRows(array &$lines, array $items, bool $includeDate, bool $includeGroup): void
     {
         if ($items === []) {
-            $lines[] = '  該当なし';
+            $lines[] = '・該当なし';
             return;
         }
 
         $items = $this->sortRows($items, $includeDate);
         foreach ($items as $item) {
-            $lines[] = sprintf(
-                '  【%s】%s | %s',
-                $this->dateText($item, $includeDate),
-                $item['title'] ?? '無題',
-                $this->groupName($item)
-            );
+            $lines[] = $this->rowText($item, $includeDate, $includeGroup);
         }
     }
 
@@ -266,10 +254,16 @@ final class ReportBuilder
      * @param array<int, string> $lines
      * @param array<int, array<string, mixed>> $items
      */
-    private function appendGroupedRows(array &$lines, array $items, DateTimeImmutable $today, bool $includeDate): void
+    private function appendGroupedRows(
+        array &$lines,
+        array $items,
+        DateTimeImmutable $today,
+        bool $includeDate,
+        bool $includeGroup
+    ): void
     {
         if ($items === []) {
-            $lines[] = '  該当なし';
+            $lines[] = '・該当なし';
             return;
         }
 
@@ -278,16 +272,15 @@ final class ReportBuilder
             $start = $this->dateTimeFromItem($item, 'date_start');
             $dateKey = $this->dateGroupKey($start);
             if ($dateKey !== $currentDate) {
-                $lines[] = '・' . $this->relativeDateLabel($start, $today);
+                if ($currentDate !== null) {
+                    $lines[] = '';
+                }
+
+                $lines[] = $this->upcomingDateLabel($start, $today);
                 $currentDate = $dateKey;
             }
 
-            $lines[] = sprintf(
-                '  【%s】%s | %s',
-                $this->dateText($item, $includeDate),
-                $item['title'] ?? '無題',
-                $this->groupName($item)
-            );
+            $lines[] = $this->rowText($item, false, $includeGroup);
         }
     }
 
@@ -295,20 +288,59 @@ final class ReportBuilder
      * @param array<int, string> $lines
      * @param array<int, array<string, mixed>> $items
      */
-    private function appendGroupedHolidayRows(array &$lines, array $items, DateTimeImmutable $today): void
+    private function appendIdentityDocumentRows(array &$lines, array $items, DateTimeImmutable $today): void
     {
         $currentDate = null;
-        foreach ($this->sortRows($items, true) as $holiday) {
-            $start = $this->dateTimeFromItem($holiday, 'date_start');
+        foreach ($this->sortRows($items, true) as $item) {
+            $start = $this->dateTimeFromItem($item, 'date_start');
             $dateKey = $this->dateGroupKey($start);
             if ($dateKey !== $currentDate) {
-                $lines[] = '・' . $this->relativeDateLabel($start, $today);
+                if ($currentDate !== null) {
+                    $lines[] = '';
+                }
+
+                $lines[] = $this->identityDocumentDateLabel($start, $today);
                 $currentDate = $dateKey;
             }
 
-            $date = $this->dateForDisplay($holiday, 'm/d');
-            $lines[] = sprintf('    【%s】 %s | %s', $date, $holiday['title'] ?? '無題', self::GENRE_HOLIDAY);
+            $lines[] = sprintf('・%s', $item['title'] ?? '無題');
         }
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function rowText(array $item, bool $includeDate, bool $includeGroup): string
+    {
+        $parts = [];
+        $dateText = $this->dateText($item, $includeDate);
+        if ($dateText !== '' && $dateText !== '終日') {
+            $parts[] = $dateText;
+        }
+
+        $parts[] = (string) ($item['title'] ?? '無題');
+
+        if ($includeGroup) {
+            $group = $this->displayGroupName($item);
+            if ($group !== null) {
+                $parts[] = $group;
+            }
+        }
+
+        return '・' . implode('｜', $parts);
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function displayGroupName(array $item): ?string
+    {
+        $group = $this->groupName($item);
+        if (in_array($group, [self::GROUP_OTHER, self::GROUP_LIFE, self::SOURCE_IDENTITY_DOCUMENT, self::GENRE_HOLIDAY], true)) {
+            return null;
+        }
+
+        return $group;
     }
 
     /**
@@ -430,19 +462,6 @@ final class ReportBuilder
         return $start->format(DATE_ATOM);
     }
 
-    /**
-     * @param array<string, mixed> $item
-     */
-    private function dateForDisplay(array $item, string $format): string
-    {
-        $start = $this->dateTimeFromItem($item, 'date_start');
-        if ($start === null) {
-            return (string) ($item['date'] ?? '');
-        }
-
-        return $start->format($format);
-    }
-
     private function dateGroupKey(?DateTimeImmutable $date): string
     {
         if ($date === null) {
@@ -452,7 +471,7 @@ final class ReportBuilder
         return $date->setTimezone($this->timezone)->format('Y-m-d');
     }
 
-    private function relativeDateLabel(?DateTimeImmutable $date, DateTimeImmutable $today): string
+    private function upcomingDateLabel(?DateTimeImmutable $date, DateTimeImmutable $today): string
     {
         if ($date === null) {
             return '日付不明';
@@ -468,14 +487,31 @@ final class ReportBuilder
 
         $days = (int) $baseDate->diff($targetDate)->format('%r%a');
         $relative = match ($days) {
-            -1 => '昨日',
-            0 => '今日',
-            1 => '明日',
-            2 => '明後日',
-            default => $days > 0 ? sprintf('%d日後', $days) : sprintf('%d日前', abs($days)),
+            1 => '明日 ',
+            2 => 'あさって ',
+            default => '',
         };
 
-        return sprintf('%s（%s）', $relative, $this->weekdayLabel($targetDate));
+        return sprintf('%s%s（%s）', $relative, $targetDate->format('m/d'), $this->weekdayLabel($targetDate));
+    }
+
+    private function identityDocumentDateLabel(?DateTimeImmutable $date, DateTimeImmutable $today): string
+    {
+        if ($date === null) {
+            return '日付不明';
+        }
+
+        $date = $date->setTimezone($this->timezone);
+        $today = $today->setTimezone($this->timezone);
+        $targetDate = DateTimeImmutable::createFromFormat('!Y-m-d', $date->format('Y-m-d'), $this->timezone);
+        $baseDate = DateTimeImmutable::createFromFormat('!Y-m-d', $today->format('Y-m-d'), $this->timezone);
+        if (!$targetDate || !$baseDate) {
+            return '日付不明';
+        }
+
+        $days = (int) $baseDate->diff($targetDate)->format('%r%a');
+
+        return sprintf('%s（%s） あと%d日', $targetDate->format('m/d'), $this->weekdayLabel($targetDate), $days);
     }
 
     private function weekdayLabel(DateTimeImmutable $date): string

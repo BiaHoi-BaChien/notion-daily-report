@@ -20,6 +20,7 @@ Edit `.env`:
 
 ```dotenv
 APP_TIMEZONE=Asia/Saigon
+HTTP_CA_BUNDLE=
 NOTION_API_KEY=secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 NOTION_VERSION=2026-03-11
 NOTION_DATA_SOURCE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -39,6 +40,8 @@ SMTP_PASSWORD=password
 MAIL_FROM=user@example.com
 MAIL_TO=recipient1@example.com,recipient2@example.com
 ```
+
+On Windows PHP installations where HTTPS requests fail with `cURL error 60`, set `HTTP_CA_BUNDLE` to a CA bundle file such as a downloaded `cacert.pem`. Relative paths are resolved from the project root.
 
 For API versions `2025-09-03` and newer, Notion distinguishes between database IDs and data-source IDs. Prefer the data-source ID from Notion's "Copy data source ID" action. If you provide a database ID, this script can resolve it automatically only when that database has exactly one data source.
 

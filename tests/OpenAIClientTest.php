@@ -15,6 +15,17 @@ use PHPUnit\Framework\TestCase;
 
 final class OpenAIClientTest extends TestCase
 {
+    public function testUsesConfiguredCaBundleForDefaultHttpClient(): void
+    {
+        $client = new OpenAIClient('sk-test', 'gpt-5.2', 30, null, [], 'C:/certs/cacert.pem');
+
+        $reflection = new \ReflectionProperty($client, 'client');
+        $httpClient = $reflection->getValue($client);
+
+        self::assertInstanceOf(Client::class, $httpClient);
+        self::assertSame('C:/certs/cacert.pem', $httpClient->getConfig('verify'));
+    }
+
     public function testSendsResponsesRequestAndExtractsOutputText(): void
     {
         $history = [];
@@ -53,7 +64,9 @@ final class OpenAIClientTest extends TestCase
         self::assertStringContainsString('祝日や一般的な記念日', $body['instructions']);
         self::assertStringContainsString('ユーザーの子供の学校予定', $body['instructions']);
         self::assertStringContainsString('仕事や生活の予定とは分けて', $body['instructions']);
-        self::assertStringContainsString('2〜4文の自然な文章', $body['instructions']);
+        self::assertStringContainsString('文数や行数を2〜4に制限する必要はありません', $body['instructions']);
+        self::assertStringContainsString('ECニュース、AIニュース、ベトナムローカル情報', $body['instructions']);
+        self::assertStringContainsString('ユーザーに知らせるべきニュース', $body['instructions']);
         self::assertStringContainsString('予定の再掲は出力しない', $body['instructions']);
         self::assertStringContainsString('請求書確認', $body['input']);
         self::assertSame($schedule, $body['input']);

@@ -15,6 +15,17 @@ use PHPUnit\Framework\TestCase;
 
 final class NotionClientTest extends TestCase
 {
+    public function testUsesConfiguredCaBundleForDefaultHttpClient(): void
+    {
+        $client = new NotionClient('secret-token', '2026-03-11', 20, null, 'C:/certs/cacert.pem');
+
+        $reflection = new \ReflectionProperty($client, 'client');
+        $httpClient = $reflection->getValue($client);
+
+        self::assertInstanceOf(Client::class, $httpClient);
+        self::assertSame('C:/certs/cacert.pem', $httpClient->getConfig('verify'));
+    }
+
     public function testQueriesDataSourceWithPaginationAndFilterProperties(): void
     {
         $history = [];

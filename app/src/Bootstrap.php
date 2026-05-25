@@ -23,13 +23,16 @@ final class Bootstrap
             $slack = $config['slack'] ?? [];
             $openai = $config['openai'] ?? [];
             $mail = $config['mail'] ?? [];
+            $caBundlePath = self::resolveOptionalPath($projectRoot, (string) ($config['http']['ca_bundle'] ?? ''));
 
             $command = new DailyReportCommand(
                 $config,
                 new NotionClient(
                     (string) $notion['api_key'],
                     (string) $notion['version'],
-                    (int) $notion['timeout']
+                    (int) $notion['timeout'],
+                    null,
+                    $caBundlePath
                 ),
                 new PropertyExtractor($timezone),
                 new DateFilter($timezone),
@@ -39,14 +42,17 @@ final class Bootstrap
                 true,
                 new SlackNotifier(
                     (string) ($slack['webhook_url'] ?? ''),
-                    (int) ($slack['timeout'] ?? 10)
+                    (int) ($slack['timeout'] ?? 10),
+                    null,
+                    $caBundlePath
                 ),
                 new OpenAIClient(
                     (string) ($openai['api_key'] ?? ''),
                     (string) ($openai['model'] ?? 'auto'),
                     (int) ($openai['timeout'] ?? 30),
                     null,
-                    is_array($openai['model_candidates'] ?? null) ? $openai['model_candidates'] : []
+                    is_array($openai['model_candidates'] ?? null) ? $openai['model_candidates'] : [],
+                    $caBundlePath
                 ),
                 new MailNotifier(
                     (string) ($mail['host'] ?? ''),
@@ -119,6 +125,10 @@ final class Bootstrap
             throw new ConfigException('Config key "notion" must be an array.');
         }
 
+        if (isset($config['http']) && !is_array($config['http'])) {
+            throw new ConfigException('Config key "http" must be an array.');
+        }
+
         if (trim((string) ($config['notion']['api_key'] ?? '')) === '') {
             throw new ConfigException('NOTION_API_KEY is required.');
         }
@@ -135,5 +145,20 @@ final class Bootstrap
         }
 
         return $projectRoot . '/' . str_replace('\\', '/', $path);
+    }
+
+    private static function resolveOptionalPath(string $projectRoot, string $path): ?string
+    {
+        $path = trim($path);
+        if ($path === '') {
+            return null;
+        }
+
+        $resolved = self::resolvePath($projectRoot, $path);
+        if (!is_file($resolved)) {
+            throw new ConfigException('Configured HTTP_CA_BUNDLE file was not found: ' . $resolved);
+        }
+
+        return $resolved;
     }
 }

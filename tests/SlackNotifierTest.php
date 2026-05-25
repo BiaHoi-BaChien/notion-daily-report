@@ -14,6 +14,17 @@ use PHPUnit\Framework\TestCase;
 
 final class SlackNotifierTest extends TestCase
 {
+    public function testUsesConfiguredCaBundleForDefaultHttpClient(): void
+    {
+        $notifier = new SlackNotifier('https://hooks.slack.test/services/test', 10, null, 'C:/certs/cacert.pem');
+
+        $reflection = new \ReflectionProperty($notifier, 'client');
+        $httpClient = $reflection->getValue($notifier);
+
+        self::assertInstanceOf(Client::class, $httpClient);
+        self::assertSame('C:/certs/cacert.pem', $httpClient->getConfig('verify'));
+    }
+
     public function testSendsTextPayloadToWebhook(): void
     {
         $history = [];

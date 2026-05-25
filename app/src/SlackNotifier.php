@@ -16,9 +16,15 @@ final class SlackNotifier implements SlackNotifierInterface
     public function __construct(
         private readonly string $webhookUrl,
         int $timeout,
-        ?ClientInterface $client = null
+        ?ClientInterface $client = null,
+        ?string $caBundlePath = null
     ) {
-        $this->client = $client ?? new Client(['timeout' => $timeout]);
+        $options = ['timeout' => $timeout];
+        if ($caBundlePath !== null && trim($caBundlePath) !== '') {
+            $options['verify'] = $caBundlePath;
+        }
+
+        $this->client = $client ?? new Client($options);
     }
 
     public function isConfigured(): bool

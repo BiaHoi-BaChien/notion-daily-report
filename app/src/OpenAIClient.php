@@ -21,12 +21,18 @@ final class OpenAIClient implements OpenAIClientInterface
         private readonly string $model,
         int $timeout,
         ?ClientInterface $client = null,
-        private readonly array $modelCandidates = []
+        private readonly array $modelCandidates = [],
+        ?string $caBundlePath = null
     ) {
-        $this->client = $client ?? new Client([
+        $options = [
             'base_uri' => self::BASE_URI,
             'timeout' => $timeout,
-        ]);
+        ];
+        if ($caBundlePath !== null && trim($caBundlePath) !== '') {
+            $options['verify'] = $caBundlePath;
+        }
+
+        $this->client = $client ?? new Client($options);
     }
 
     public function isConfigured(): bool
@@ -113,7 +119,8 @@ final class OpenAIClient implements OpenAIClientInterface
             'ユーザーはベトナム・ホーチミンに在住しているため、挨拶は現地の気候、生活リズム、祝日・記念日も自然に踏まえてください。',
             '挨拶では、日付、曜日、月初・月末、季節感、週の始まり・週末前、日本・ベトナムの祝日や一般的な記念日など、日付や曜日から自然に分かる範囲の話題を扱ってください。',
             '予定に「学校」と分類されているものはユーザーの子供の学校予定として扱い、仕事や生活の予定とは分けてコメントしてください。',
-            '出力は2〜4文の自然な文章にしてください。見出し、箇条書き、番号付きリスト、URL、予定の再掲は出力しないでください。',
+            '出力は自然な文章にしてください。文数や行数を2〜4に制限する必要はありません。見出し、箇条書き、番号付きリスト、URL、予定の再掲は出力しないでください。',
+            'ECニュース、AIニュース、ベトナムローカル情報のうち、ユーザーに知らせるべきニュースがあれば自然に紹介してください。',
         ]);
     }
 

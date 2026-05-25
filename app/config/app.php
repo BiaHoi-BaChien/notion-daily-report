@@ -100,6 +100,9 @@ $sources = \App\SourceConfigBuilder::buildSources($dataSourceIds, $baseSources);
 return [
     'timezone' => $env('APP_TIMEZONE', 'Asia/Saigon'),
     'log_path' => $env('LOG_PATH', 'app/logs/daily_report.log'),
+    'http' => [
+        'ca_bundle' => $env('HTTP_CA_BUNDLE', $env('SSL_CERT_FILE', $env('CURL_CA_BUNDLE', ''))),
+    ],
     'notion' => [
         'api_key' => $env('NOTION_API_KEY', ''),
         'version' => $env('NOTION_VERSION', '2026-03-11'),

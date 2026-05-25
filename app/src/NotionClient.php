@@ -21,12 +21,18 @@ final class NotionClient implements NotionClientInterface
         private readonly string $apiKey,
         private readonly string $notionVersion,
         int $timeout,
-        ?ClientInterface $client = null
+        ?ClientInterface $client = null,
+        ?string $caBundlePath = null
     ) {
-        $this->client = $client ?? new Client([
+        $options = [
             'base_uri' => self::BASE_URI,
             'timeout' => $timeout,
-        ]);
+        ];
+        if ($caBundlePath !== null && trim($caBundlePath) !== '') {
+            $options['verify'] = $caBundlePath;
+        }
+
+        $this->client = $client ?? new Client($options);
     }
 
     public function queryDataSource(string $dataSourceId, array $filterPropertyIds = [], array $filter = []): array

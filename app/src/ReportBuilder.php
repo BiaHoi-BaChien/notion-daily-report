@@ -76,6 +76,15 @@ final class ReportBuilder
         );
         $lines[] = '';
 
+        $this->appendSectionHeader($lines, '⏰ 明日の時間付き予定');
+        $this->appendRows(
+            $lines,
+            $this->tomorrowTimedTodoAndCalendarItems($items, $today),
+            false,
+            true
+        );
+        $lines[] = '';
+
         $this->appendSectionHeader($lines, '⚠ 本日期限');
         $this->appendRows(
             $lines,
@@ -89,7 +98,7 @@ final class ReportBuilder
         $this->appendSectionHeader($lines, '📌 近日確認');
         $this->appendGroupedRows(
             $lines,
-            $this->upcomingItems($items),
+            $this->upcomingItems($items, $today),
             $today,
             true,
             true,
@@ -195,13 +204,30 @@ final class ReportBuilder
      * @param array<int, array<string, mixed>> $items
      * @return array<int, array<string, mixed>>
      */
-    private function upcomingItems(array $items): array
+    private function upcomingItems(array $items, DateTimeImmutable $today): array
     {
+        $tomorrow = $today->setTimezone($this->timezone)->modify('+1 day')->format('Y-m-d');
+
         return array_values(array_filter(
             $items,
             fn (array $item): bool => ($item['classification'] ?? null) === 'upcoming'
                 && !$this->isIdentityDocument($item)
                 && !$this->isChildLunch($item)
+                && !$this->isTomorrowTimedTodoOrCalendar($item, $tomorrow)
+        ));
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function tomorrowTimedTodoAndCalendarItems(array $items, DateTimeImmutable $today): array
+    {
+        $tomorrow = $today->setTimezone($this->timezone)->modify('+1 day')->format('Y-m-d');
+
+        return array_values(array_filter(
+            $items,
+            fn (array $item): bool => $this->isTomorrowTimedTodoOrCalendar($item, $tomorrow)
         ));
     }
 
@@ -681,5 +707,22 @@ final class ReportBuilder
     private function isHoliday(array $item): bool
     {
         return trim((string) ($item['genre'] ?? '')) === self::GENRE_HOLIDAY;
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function isTomorrowTimedTodoOrCalendar(array $item, string $tomorrow): bool
+    {
+        if (($item['classification'] ?? null) !== 'upcoming'
+            || ($item['date_has_time'] ?? false) !== true
+            || (!$this->isTodo($item) && !$this->isCalendar($item))
+        ) {
+            return false;
+        }
+
+        $start = $this->dateTimeFromItem($item, 'date_start');
+
+        return $start !== null && $start->format('Y-m-d') === $tomorrow;
     }
 }

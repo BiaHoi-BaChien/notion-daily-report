@@ -351,10 +351,11 @@ final class DailyReportCommandTest extends TestCase
 
         $report = $builder->renderSchedule($items, $today);
 
-        self::assertStringContainsString('📌 近日確認', $report);
-        self::assertStringContainsString('明日 04/23（木）', $report);
+        self::assertStringContainsString('⏰ 明日の時間付き予定', $report);
         self::assertStringContainsString('・18:00｜楽天ペイ未契約店舗の表示確認', $report);
         self::assertStringNotContainsString('楽天ペイ未契約店舗の表示確認｜その他', $report);
+        self::assertStringContainsString('📌 近日確認', $report);
+        self::assertStringNotContainsString('明日 04/23（木）', $report);
         self::assertStringContainsString('あさって 04/24（金）', $report);
         self::assertStringContainsString('・10:00｜Notion 新機能紹介ウェビナー', $report);
         self::assertStringContainsString('04/29（水）', $report);

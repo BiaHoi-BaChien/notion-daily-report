@@ -31,7 +31,7 @@ final class MailNotifier implements MailNotifierInterface
             && $this->recipients !== [];
     }
 
-    public function send(string $subject, string $body): void
+    public function send(string $subject, string $body, ?string $plainBody = null, bool $bodyIsHtml = false): void
     {
         if (!$this->isConfigured()) {
             return;
@@ -54,8 +54,8 @@ final class MailNotifier implements MailNotifierInterface
             }
 
             $mail->Subject = $subject;
-            $mail->Body = self::renderHtmlBody($body);
-            $mail->AltBody = $body;
+            $mail->Body = self::renderHtmlBody($body, $bodyIsHtml);
+            $mail->AltBody = $plainBody ?? $body;
             $mail->isHTML(true);
             $mail->send();
         } catch (PHPMailerException $exception) {
@@ -63,13 +63,12 @@ final class MailNotifier implements MailNotifierInterface
         }
     }
 
-    public static function renderHtmlBody(string $body): string
+    public static function renderHtmlBody(string $body, bool $bodyIsHtml = false): string
     {
-        $escapedBody = htmlspecialchars(
-            str_replace(["\r\n", "\r"], "\n", rtrim($body)),
-            ENT_QUOTES | ENT_SUBSTITUTE,
-            'UTF-8'
-        );
+        $normalizedBody = str_replace(["\r\n", "\r"], "\n", rtrim($body));
+        $escapedBody = $bodyIsHtml
+            ? $normalizedBody
+            : htmlspecialchars($normalizedBody, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 
         return <<<HTML
 <!doctype html>

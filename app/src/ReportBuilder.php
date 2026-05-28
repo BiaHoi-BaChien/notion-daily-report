@@ -9,6 +9,10 @@ use DateTimeZone;
 
 final class ReportBuilder
 {
+    public const FORMAT_TEXT = 'text';
+    public const FORMAT_SLACK = 'slack';
+    public const FORMAT_HTML = 'html';
+
     private const SOURCE_TODO = 'ToDo';
     private const SOURCE_PROJECT_TASK = '各案件のタスク';
     private const SOURCE_CALENDAR = 'カレンダー';
@@ -57,7 +61,7 @@ final class ReportBuilder
     /**
      * @param array<int, array<string, mixed>> $items
      */
-    public function renderSchedule(array $items, DateTimeImmutable $today): string
+    public function renderSchedule(array $items, DateTimeImmutable $today, string $format = self::FORMAT_TEXT): string
     {
         $lines = [];
         $lines[] = $this->todayHeader($today);
@@ -67,7 +71,8 @@ final class ReportBuilder
             $lines,
             $this->todayTodoItems($items),
             false,
-            false
+            false,
+            $format
         );
         $lines[] = '';
 
@@ -85,7 +90,8 @@ final class ReportBuilder
             $lines,
             $this->todayProjectTaskItems($items),
             false,
-            true
+            true,
+            $format
         );
         $lines[] = '';
 
@@ -95,7 +101,8 @@ final class ReportBuilder
             $this->upcomingItems($items, $today),
             $today,
             true,
-            true
+            true,
+            $format
         );
 
         $childLunches = $this->childLunchItems($items);
@@ -108,7 +115,7 @@ final class ReportBuilder
                 foreach ($this->sortRows($childLunches, true) as $childLunch) {
                     $text = $this->childLunchText($childLunch);
                     if ($text !== null) {
-                        $lines[] = sprintf('今日の子供のお弁当は「%s」です。', $text);
+                        $lines[] = sprintf('今日の子供のお弁当は「%s」です。', $this->formatText($text, $format));
                     }
                 }
             }
@@ -119,21 +126,21 @@ final class ReportBuilder
                 }
 
                 $lines[] = '以下の身分証明書の有効期限が近づいています。';
-                $this->appendIdentityDocumentRows($lines, $identityDocuments, $today);
+                $this->appendIdentityDocumentRows($lines, $identityDocuments, $today, $format);
             }
         }
 
         return rtrim(implode(PHP_EOL, $lines)) . PHP_EOL;
     }
 
-    public function renderReport(?string $comment, string $schedule): string
+    public function renderReport(?string $comment, string $schedule, string $format = self::FORMAT_TEXT): string
     {
         $comment = trim((string) $comment);
         if ($comment === '') {
             return rtrim($schedule) . PHP_EOL;
         }
 
-        return sprintf("%s%s%s%s", $comment, PHP_EOL . PHP_EOL, rtrim($schedule), PHP_EOL);
+        return sprintf("%s%s%s%s", $this->formatText($comment, $format), PHP_EOL . PHP_EOL, rtrim($schedule), PHP_EOL);
     }
 
     private function todayHeader(DateTimeImmutable $today): string
@@ -263,7 +270,7 @@ final class ReportBuilder
      * @param array<int, string> $lines
      * @param array<int, array<string, mixed>> $items
      */
-    private function appendRows(array &$lines, array $items, bool $includeDate, bool $includeGroup): void
+    private function appendRows(array &$lines, array $items, bool $includeDate, bool $includeGroup, string $format): void
     {
         if ($items === []) {
             $lines[] = '・該当なし';
@@ -272,7 +279,7 @@ final class ReportBuilder
 
         $items = $this->sortRows($items, $includeDate);
         foreach ($items as $item) {
-            $lines[] = $this->rowText($item, $includeDate, $includeGroup);
+            $lines[] = $this->rowText($item, $includeDate, $includeGroup, $format);
         }
     }
 
@@ -285,7 +292,8 @@ final class ReportBuilder
         array $items,
         DateTimeImmutable $today,
         bool $includeDate,
-        bool $includeGroup
+        bool $includeGroup,
+        string $format
     ): void
     {
         if ($items === []) {
@@ -306,7 +314,7 @@ final class ReportBuilder
                 $currentDate = $dateKey;
             }
 
-            $lines[] = $this->rowText($item, false, $includeGroup);
+            $lines[] = $this->rowText($item, false, $includeGroup, $format);
         }
     }
 
@@ -314,7 +322,7 @@ final class ReportBuilder
      * @param array<int, string> $lines
      * @param array<int, array<string, mixed>> $items
      */
-    private function appendIdentityDocumentRows(array &$lines, array $items, DateTimeImmutable $today): void
+    private function appendIdentityDocumentRows(array &$lines, array $items, DateTimeImmutable $today, string $format): void
     {
         $currentDate = null;
         foreach ($this->sortRows($items, true) as $item) {
@@ -329,14 +337,14 @@ final class ReportBuilder
                 $currentDate = $dateKey;
             }
 
-            $lines[] = sprintf('・%s', $item['title'] ?? '無題');
+            $lines[] = sprintf('・%s', $this->formatTitle($item, $format));
         }
     }
 
     /**
      * @param array<string, mixed> $item
      */
-    private function rowText(array $item, bool $includeDate, bool $includeGroup): string
+    private function rowText(array $item, bool $includeDate, bool $includeGroup, string $format): string
     {
         $parts = [];
         $dateText = $this->dateText($item, $includeDate);
@@ -344,16 +352,77 @@ final class ReportBuilder
             $parts[] = $dateText;
         }
 
-        $parts[] = (string) ($item['title'] ?? '無題');
+        $parts[] = $this->formatTitle($item, $format);
 
         if ($includeGroup) {
             $group = $this->displayGroupName($item);
             if ($group !== null) {
-                $parts[] = $group;
+                $parts[] = $this->formatText($group, $format);
             }
         }
 
         return '・' . implode('｜', $parts);
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function formatTitle(array $item, string $format): string
+    {
+        $title = (string) ($item['title'] ?? '無題');
+        $url = $this->notionUrl($item);
+        if ($url === null) {
+            return $this->formatText($title, $format);
+        }
+
+        return match ($format) {
+            self::FORMAT_SLACK => sprintf('<%s|%s>', $this->escapeSlackUrl($url), $this->escapeSlackText($title)),
+            self::FORMAT_HTML => sprintf(
+                '<a href="%s">%s</a>',
+                htmlspecialchars($url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                htmlspecialchars($title, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+            ),
+            default => $title,
+        };
+    }
+
+    private function formatText(string $text, string $format): string
+    {
+        return match ($format) {
+            self::FORMAT_SLACK => $this->escapeSlackText($text),
+            self::FORMAT_HTML => htmlspecialchars($text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+            default => $text,
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function notionUrl(array $item): ?string
+    {
+        $url = $item['url'] ?? null;
+        if (!is_string($url) || trim($url) === '') {
+            return null;
+        }
+
+        return trim($url);
+    }
+
+    private function escapeSlackText(string $text): string
+    {
+        return strtr($text, [
+            '&' => '&amp;',
+            '<' => '&lt;',
+            '>' => '&gt;',
+        ]);
+    }
+
+    private function escapeSlackUrl(string $url): string
+    {
+        return strtr($url, [
+            '>' => '%3E',
+            '|' => '%7C',
+        ]);
     }
 
     /**

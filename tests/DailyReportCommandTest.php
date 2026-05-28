@@ -203,26 +203,26 @@ final class DailyReportCommandTest extends TestCase
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
         self::assertStringContainsString('🔥 今日の予定', $report);
-        self::assertStringContainsString('・09:30｜決済確認', $report);
+        self::assertStringContainsString('・09:30｜<https://notion.example/%E6%B1%BA%E6%B8%88%E7%A2%BA%E8%AA%8D|決済確認>', $report);
         self::assertStringNotContainsString('決済確認｜決済システム', $report);
         self::assertStringContainsString('⚠ 本日期限', $report);
-        self::assertStringContainsString('・決済追加確認｜決済システム', $report);
+        self::assertStringContainsString('決済追加確認>｜決済システム', $report);
         self::assertStringContainsString('楽天ペイV2', $report);
-        self::assertStringContainsString('楽天ペイ表示確認｜楽天ペイV2', $report);
+        self::assertStringContainsString('楽天ペイ表示確認>｜楽天ペイV2', $report);
         self::assertStringContainsString('📌 近日確認', $report);
-        self::assertStringContainsString('・10:00｜来週の確認｜決済システム', $report);
-        self::assertStringContainsString('・10:00 - 11:00｜MTG K&G', $report);
+        self::assertStringContainsString('・10:00｜<https://notion.example/%E6%9D%A5%E9%80%B1%E3%81%AE%E7%A2%BA%E8%AA%8D|来週の確認>｜決済システム', $report);
+        self::assertStringContainsString('・10:00 - 11:00｜<https://notion.example/MTG%20K%26G|MTG K&amp;G>', $report);
         self::assertStringNotContainsString('MTG K&G｜その他', $report);
-        self::assertStringContainsString('・16:00｜委員会活動｜学校', $report);
+        self::assertStringContainsString('・16:00｜<https://notion.example/%E5%A7%94%E5%93%A1%E4%BC%9A%E6%B4%BB%E5%8B%95|委員会活動>｜学校', $report);
         self::assertStringContainsString('💡 その他トピックス', $report);
         self::assertStringNotContainsString('  以下の通り祝日があります。', $report);
-        self::assertStringContainsString('・ベトナム暦的吉日', $report);
+        self::assertStringContainsString('・<https://notion.example/%E3%83%99%E3%83%88%E3%83%8A%E3%83%A0%E6%9A%A6%E7%9A%84%E5%90%89%E6%97%A5|ベトナム暦的吉日>', $report);
         self::assertStringNotContainsString('ベトナム暦的吉日｜祝日', $report);
         self::assertStringContainsString('以下の身分証明書の有効期限が近づいています。', $report);
-        self::assertStringContainsString('・在留カード', $report);
+        self::assertStringContainsString('・<https://notion.example/%E5%9C%A8%E7%95%99%E3%82%AB%E3%83%BC%E3%83%89|在留カード>', $report);
         self::assertStringNotContainsString('在留カード｜身分証明書', $report);
         self::assertSame(1, substr_count($report, '在留カード'));
-        self::assertStringNotContainsString('https://notion.example', $report);
+        self::assertStringContainsString('https://notion.example', $report);
     }
 
     public function testRendersTodayChildLunchInOtherTopics(): void
@@ -304,7 +304,7 @@ final class DailyReportCommandTest extends TestCase
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
         self::assertStringContainsString('⚠ 本日期限', $report);
-        self::assertStringContainsString('楽天ペイ表示確認｜楽天ペイV2', $report);
+        self::assertStringContainsString('楽天ペイ表示確認>｜楽天ペイV2', $report);
         self::assertStringNotContainsString('楽天ペイ表示確認｜その他', $report);
     }
 
@@ -369,36 +369,29 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringNotContainsString('TECHCOMBANK(Debid Card)｜身分証明書', $report);
     }
 
-    public function testHighlightsTomorrowTimedTodoAndCalendarItemsBeforeUpcoming(): void
+    public function testRendersNotionPageLinksForSlackAndHtmlMail(): void
     {
         $timezone = new DateTimeZone('Asia/Saigon');
-        $today = new DateTimeImmutable('2026-05-27', $timezone);
+        $today = new DateTimeImmutable('2026-04-22', $timezone);
         $builder = new ReportBuilder($timezone);
 
-        $items = $builder->classifyAndSort([
-            $this->extractedItem('K&Gリソース表の確認', '2026-05-28', 'ToDo', '今日やるべき作業の確認', '2026-05-28T09:00:00+07:00'),
-            $this->extractedItem('【進捗確認】保守案件', '2026-05-28', 'カレンダー', '今日以降1週間の予定の確認', '2026-05-28T11:00:00+07:00'),
-            $this->extractedItem('【進捗確認】管理画面新デザイン反映プロジェクト', '2026-05-28', 'カレンダー', '今日以降1週間の予定の確認', '2026-05-28T14:45:00+07:00'),
-            $this->extractedItem('明日の終日確認', '2026-05-28', 'ToDo', '今日やるべき作業の確認', '2026-05-28'),
-            $this->extractedItem('明日の案件タスク', '2026-05-28', '各案件のタスク', '各案件ごとのタスクの確認', '2026-05-28T16:00:00+07:00'),
-            $this->extractedItem('あさっての確認', '2026-05-29', 'ToDo', '今日やるべき作業の確認', '2026-05-29T10:00:00+07:00'),
-        ], $today);
+        $linked = $this->extractedItem('確認 & <連絡>', '2026-04-22', 'ToDo', '今日やるべき作業の確認', '2026-04-22T09:00:00+07:00');
+        $linked['url'] = 'https://notion.example/page?a=1&b=2';
+        $plain = $this->extractedItem('URLなし', '2026-04-22', 'ToDo', '今日やるべき作業の確認', '2026-04-22T10:00:00+07:00');
+        $items = $builder->classifyAndSort([$linked, $plain], $today);
 
-        $report = $builder->renderSchedule($items, $today);
+        $textReport = $builder->renderSchedule($items, $today);
+        $slackReport = $builder->renderSchedule($items, $today, ReportBuilder::FORMAT_SLACK);
+        $htmlReport = $builder->renderSchedule($items, $today, ReportBuilder::FORMAT_HTML);
 
-        self::assertStringContainsString('⏰ 明日の時間付き予定', $report);
-        self::assertStringContainsString('・09:00｜K&Gリソース表の確認', $report);
-        self::assertStringContainsString('・11:00｜【進捗確認】保守案件', $report);
-        self::assertStringContainsString('・14:45｜【進捗確認】管理画面新デザイン反映プロジェクト', $report);
-        self::assertStringContainsString('📌 近日確認', $report);
-        self::assertStringContainsString('明日 05/28（木）', $report);
-        self::assertStringContainsString('・明日の終日確認', $report);
-        self::assertStringContainsString('・16:00｜明日の案件タスク', $report);
-        self::assertStringContainsString('あさって 05/29（金）', $report);
-        self::assertStringContainsString('・10:00｜あさっての確認', $report);
-        self::assertSame(1, substr_count($report, 'K&Gリソース表の確認'));
-        self::assertSame(1, substr_count($report, '【進捗確認】保守案件'));
-        self::assertSame(1, substr_count($report, '【進捗確認】管理画面新デザイン反映プロジェクト'));
+        self::assertStringContainsString('・09:00｜確認 & <連絡>', $textReport);
+        self::assertStringContainsString('・09:00｜<https://notion.example/page?a=1&b=2|確認 &amp; &lt;連絡&gt;>', $slackReport);
+        self::assertStringContainsString(
+            '・09:00｜<a href="https://notion.example/page?a=1&amp;b=2">確認 &amp; &lt;連絡&gt;</a>',
+            $htmlReport
+        );
+        self::assertStringContainsString('・10:00｜URLなし', $slackReport);
+        self::assertStringContainsString('・10:00｜URLなし', $htmlReport);
     }
 
     public function testUsesOpenAISummaryForSlackAndMailWhenConfigured(): void
@@ -433,11 +426,14 @@ final class DailyReportCommandTest extends TestCase
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
         self::assertStringContainsString('要約済みタスク', $report);
-        self::assertStringContainsString('Today task', $report);
-        self::assertSame($report, $mail->sentBody);
+        self::assertStringContainsString('<https://notion.example/Today%20task|Today task>', $report);
+        self::assertStringContainsString('<a href="https://notion.example/Today%20task">Today task</a>', (string) $mail->sentBody);
+        self::assertStringContainsString('Today task', (string) $mail->sentPlainBody);
+        self::assertStringNotContainsString('https://notion.example/Today%20task', (string) $mail->sentPlainBody);
         self::assertSame('Notion Daily Report 2026-04-16', $mail->sentSubject);
         self::assertStringContainsString('2026年04月16日（木）', $openai->receivedSchedule);
         self::assertStringContainsString('Today task', $openai->receivedSchedule);
+        self::assertStringNotContainsString('https://notion.example/Today%20task', $openai->receivedSchedule);
     }
 
     public function testSwitchesDisableOpenAISlackAndMail(): void
@@ -649,7 +645,12 @@ final class DailyReportCommandTest extends TestCase
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
         self::assertStringContainsString('お子様の学校の予定があります。', $report);
-        self::assertSame($report, $mail->sentBody);
+        self::assertStringContainsString('<https://notion.example/%E5%A7%94%E5%93%A1%E4%BC%9A%E6%B4%BB%E5%8B%95|委員会活動>', $report);
+        self::assertStringContainsString(
+            '<a href="https://notion.example/%E5%A7%94%E5%93%A1%E4%BC%9A%E6%B4%BB%E5%8B%95">委員会活動</a>',
+            (string) $mail->sentBody
+        );
+        self::assertStringContainsString('委員会活動', (string) $mail->sentPlainBody);
         self::assertStringContainsString('委員会活動', $openai->receivedSchedule);
         self::assertStringContainsString('委員会活動｜学校', $openai->receivedSchedule);
     }
@@ -1187,16 +1188,20 @@ final class StubMailNotifier implements MailNotifierInterface
 {
     public ?string $sentSubject = null;
     public ?string $sentBody = null;
+    public ?string $sentPlainBody = null;
+    public bool $sentBodyIsHtml = false;
 
     public function isConfigured(): bool
     {
         return true;
     }
 
-    public function send(string $subject, string $body): void
+    public function send(string $subject, string $body, ?string $plainBody = null, bool $bodyIsHtml = false): void
     {
         $this->sentSubject = $subject;
         $this->sentBody = $body;
+        $this->sentPlainBody = $plainBody;
+        $this->sentBodyIsHtml = $bodyIsHtml;
     }
 }
 
@@ -1207,7 +1212,7 @@ final class FailingMailNotifier implements MailNotifierInterface
         return true;
     }
 
-    public function send(string $subject, string $body): void
+    public function send(string $subject, string $body, ?string $plainBody = null, bool $bodyIsHtml = false): void
     {
         throw new RuntimeException('SMTP is unavailable.');
     }

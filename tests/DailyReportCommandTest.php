@@ -351,10 +351,11 @@ final class DailyReportCommandTest extends TestCase
 
         $report = $builder->renderSchedule($items, $today);
 
-        self::assertStringContainsString('📌 近日確認', $report);
-        self::assertStringContainsString('明日 04/23（木）', $report);
+        self::assertStringContainsString('⏰ 明日の時間付き予定', $report);
         self::assertStringContainsString('・18:00｜楽天ペイ未契約店舗の表示確認', $report);
         self::assertStringNotContainsString('楽天ペイ未契約店舗の表示確認｜その他', $report);
+        self::assertStringContainsString('📌 近日確認', $report);
+        self::assertStringNotContainsString('明日 04/23（木）', $report);
         self::assertStringContainsString('あさって 04/24（金）', $report);
         self::assertStringContainsString('・10:00｜Notion 新機能紹介ウェビナー', $report);
         self::assertStringContainsString('04/29（水）', $report);
@@ -366,6 +367,38 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringContainsString('06/01（月） あと40日', $report);
         self::assertStringContainsString('・TECHCOMBANK(Debid Card)', $report);
         self::assertStringNotContainsString('TECHCOMBANK(Debid Card)｜身分証明書', $report);
+    }
+
+    public function testHighlightsTomorrowTimedTodoAndCalendarItemsBeforeUpcoming(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $today = new DateTimeImmutable('2026-05-27', $timezone);
+        $builder = new ReportBuilder($timezone);
+
+        $items = $builder->classifyAndSort([
+            $this->extractedItem('K&Gリソース表の確認', '2026-05-28', 'ToDo', '今日やるべき作業の確認', '2026-05-28T09:00:00+07:00'),
+            $this->extractedItem('【進捗確認】保守案件', '2026-05-28', 'カレンダー', '今日以降1週間の予定の確認', '2026-05-28T11:00:00+07:00'),
+            $this->extractedItem('【進捗確認】管理画面新デザイン反映プロジェクト', '2026-05-28', 'カレンダー', '今日以降1週間の予定の確認', '2026-05-28T14:45:00+07:00'),
+            $this->extractedItem('明日の終日確認', '2026-05-28', 'ToDo', '今日やるべき作業の確認', '2026-05-28'),
+            $this->extractedItem('明日の案件タスク', '2026-05-28', '各案件のタスク', '各案件ごとのタスクの確認', '2026-05-28T16:00:00+07:00'),
+            $this->extractedItem('あさっての確認', '2026-05-29', 'ToDo', '今日やるべき作業の確認', '2026-05-29T10:00:00+07:00'),
+        ], $today);
+
+        $report = $builder->renderSchedule($items, $today);
+
+        self::assertStringContainsString('⏰ 明日の時間付き予定', $report);
+        self::assertStringContainsString('・09:00｜K&Gリソース表の確認', $report);
+        self::assertStringContainsString('・11:00｜【進捗確認】保守案件', $report);
+        self::assertStringContainsString('・14:45｜【進捗確認】管理画面新デザイン反映プロジェクト', $report);
+        self::assertStringContainsString('📌 近日確認', $report);
+        self::assertStringContainsString('明日 05/28（木）', $report);
+        self::assertStringContainsString('・明日の終日確認', $report);
+        self::assertStringContainsString('・16:00｜明日の案件タスク', $report);
+        self::assertStringContainsString('あさって 05/29（金）', $report);
+        self::assertStringContainsString('・10:00｜あさっての確認', $report);
+        self::assertSame(1, substr_count($report, 'K&Gリソース表の確認'));
+        self::assertSame(1, substr_count($report, '【進捗確認】保守案件'));
+        self::assertSame(1, substr_count($report, '【進捗確認】管理画面新デザイン反映プロジェクト'));
     }
 
     public function testUsesOpenAISummaryForSlackAndMailWhenConfigured(): void

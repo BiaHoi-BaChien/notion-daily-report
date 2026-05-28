@@ -8,5 +8,5 @@ interface MailNotifierInterface
 {
     public function isConfigured(): bool;
 
-    public function send(string $subject, string $body): void;
+    public function send(string $subject, string $body, ?string $plainBody = null, bool $bodyIsHtml = false): void;
 }

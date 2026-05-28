@@ -33,4 +33,12 @@ final class MailNotifierTest extends TestCase
         self::assertStringContainsString("1. 今日確認するべきToDo\n  【14:45】確認 &lt;重要&gt; | その他", $html);
         self::assertStringNotContainsString('確認 <重要>', $html);
     }
+
+    public function testRendersPreparedHtmlBodyWithoutEscapingLinks(): void
+    {
+        $html = MailNotifier::renderHtmlBody('・<a href="https://notion.example/page">確認 &amp; 連絡</a>', true);
+
+        self::assertStringContainsString('<a href="https://notion.example/page">確認 &amp; 連絡</a>', $html);
+        self::assertStringNotContainsString('&lt;a href=', $html);
+    }
 }

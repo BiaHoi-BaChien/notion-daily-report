@@ -110,6 +110,8 @@ final class DailyReportCommand
 
             $classified = $this->reportBuilder->classifyAndSort($items, $today);
             $schedule = $this->reportBuilder->renderSchedule($classified, $today);
+            $slackSchedule = $this->reportBuilder->renderSchedule($classified, $today, ReportBuilder::FORMAT_SLACK);
+            $mailHtmlSchedule = $this->reportBuilder->renderSchedule($classified, $today, ReportBuilder::FORMAT_HTML);
             $apiSendCount = $this->shouldSummarizeWithOpenAI($classified) ? 1 : 0;
 
             $this->logger->info('daily_report_filtered', [
@@ -126,9 +128,12 @@ final class DailyReportCommand
                 'api_send_count' => $apiSendCount,
             ]);
 
-            $report = $this->buildNotificationReport($classified, $schedule, $runId);
-            $slackStatus = $this->sendSlackReport($report, $runId);
-            $mailStatus = $this->sendMailReport($report, $today, $runId);
+            $comment = $this->buildNotificationComment($classified, $schedule, $runId);
+            $report = $this->reportBuilder->renderReport($comment, $schedule);
+            $slackReport = $this->reportBuilder->renderReport($comment, $slackSchedule, ReportBuilder::FORMAT_SLACK);
+            $mailHtmlReport = $this->reportBuilder->renderReport($comment, $mailHtmlSchedule, ReportBuilder::FORMAT_HTML);
+            $slackStatus = $this->sendSlackReport($slackReport, $runId);
+            $mailStatus = $this->sendMailReport($mailHtmlReport, $report, $today, $runId);
 
             $this->logger->info('daily_report_end', [
                 'run_id' => $runId,
@@ -466,14 +471,14 @@ final class DailyReportCommand
     /**
      * @param array<int, array<string, mixed>> $items
      */
-    private function buildNotificationReport(array $items, string $schedule, string $runId): string
+    private function buildNotificationComment(array $items, string $schedule, string $runId): ?string
     {
         if (!$this->shouldSummarizeWithOpenAI($items)) {
             $this->logger->info('openai_summary_skipped', [
                 'run_id' => $runId,
                 'reason' => $this->openAISkipReason($items),
             ]);
-            return $this->reportBuilder->renderReport(null, $schedule);
+            return null;
         }
 
         $this->logger->info('openai_payload_prepared', [
@@ -491,7 +496,7 @@ final class DailyReportCommand
                 'error' => $exception->getMessage(),
                 'fallback' => 'local_report',
             ]);
-            return $this->reportBuilder->renderReport(null, $schedule);
+            return null;
         }
 
         $this->logger->info('openai_summary_complete', [
@@ -499,7 +504,7 @@ final class DailyReportCommand
             'summary_length_bytes' => strlen($summary),
         ]);
 
-        return $this->reportBuilder->renderReport($summary, $schedule);
+        return $summary;
     }
 
     /**
@@ -529,7 +534,7 @@ final class DailyReportCommand
         return 'OPENAI_API_KEY is not configured.';
     }
 
-    private function sendMailReport(string $report, DateTimeImmutable $today, string $runId): string
+    private function sendMailReport(string $htmlReport, string $plainReport, DateTimeImmutable $today, string $runId): string
     {
         if (!$this->isFeatureEnabled('mail')) {
             $this->logger->info('mail_notification_skipped', [
@@ -549,7 +554,7 @@ final class DailyReportCommand
 
         $subject = sprintf('Notion Daily Report %s', $today->setTimezone($this->timezone)->format('Y-m-d'));
         try {
-            $this->mailNotifier->send($subject, $report);
+            $this->mailNotifier->send($subject, $htmlReport, $plainReport, true);
         } catch (Throwable $exception) {
             $this->logger->error('mail_notification_failed', [
                 'run_id' => $runId,
@@ -562,7 +567,7 @@ final class DailyReportCommand
         $this->logger->info('mail_notification_sent', [
             'run_id' => $runId,
             'subject' => $subject,
-            'report_size_bytes' => strlen($report),
+            'report_size_bytes' => strlen($plainReport),
         ]);
         return 'sent';
     }

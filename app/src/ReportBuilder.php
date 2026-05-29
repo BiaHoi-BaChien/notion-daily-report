@@ -81,7 +81,8 @@ final class ReportBuilder
             $lines,
             $this->tomorrowTimedTodoAndCalendarItems($items, $today),
             false,
-            true
+            true,
+            $format
         );
         $lines[] = '';
 

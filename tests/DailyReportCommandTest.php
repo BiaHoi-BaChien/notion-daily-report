@@ -394,6 +394,165 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringContainsString('・10:00｜URLなし', $htmlReport);
     }
 
+    public function testRendersReadableNotionBlocksWithoutDividers(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $today = new DateTimeImmutable('2026-04-22', $timezone);
+        $builder = new ReportBuilder($timezone);
+
+        $linked = $this->extractedItem('確認 & <連絡>', '2026-04-22', 'ToDo', '今日やるべき作業の確認', '2026-04-22T09:00:00+07:00');
+        $linked['url'] = 'https://notion.example/page?a=1&b=2';
+        $tomorrow = $this->extractedItem('明日の予定', '2026-04-23', 'ToDo', '今日やるべき作業の確認', '2026-04-23T18:00:00+07:00');
+        $tomorrow['project'] = '翌日案件';
+        $deadline = $this->extractedItem('期限タスク', '2026-04-22', '各案件のタスク', '各案件ごとのタスクの確認', '2026-04-22T18:00:00+07:00');
+        $deadline['project'] = '決済システム';
+        $upcoming = $this->extractedItem('来週の確認', '2026-04-24', 'カレンダー', '今日以降1週間の予定の確認', '2026-04-24T10:00:00+07:00');
+        $upcoming['project'] = '案件A';
+        $upcoming['url'] = 'https://notion.example/upcoming';
+        $untimedUpcoming = $this->extractedItem('時間なし予定', '2026-04-24', 'カレンダー', '今日以降1週間の予定の確認', '2026-04-24');
+        $identity = $this->extractedItem('TECHCOMBANK(Debid Card)', '2026-06-01', '身分証明書', '期限切れが迫っている身分証明書の確認', '2026-06-01');
+        $items = $builder->classifyAndSort([$linked, $tomorrow, $deadline, $upcoming, $untimedUpcoming, $identity], $today);
+
+        $blocks = $builder->renderNotionBlocks('今日のコメント', $items, $today);
+        $types = array_column($blocks, 'type');
+
+        self::assertNotContains('divider', $types);
+        self::assertNotContains('heading_1', $types);
+        self::assertSame('callout', $blocks[0]['type']);
+        self::assertSame('🤖', $blocks[0]['callout']['icon']['emoji']);
+        self::assertContains('heading_2', $types);
+        self::assertContains('heading_3', $types);
+        foreach ($blocks as $block) {
+            if (($block['type'] ?? null) === 'heading_2') {
+                self::assertSame('yellow_background', $block['heading_2']['color']);
+            }
+        }
+
+        $deadlineCallouts = array_values(array_filter(
+            $blocks,
+            static fn (array $block): bool => ($block['type'] ?? null) === 'callout'
+                && (($block['callout']['rich_text'][0]['text']['content'] ?? null) === '期限タスク')
+        ));
+        self::assertSame([], $deadlineCallouts);
+
+        $linkedBullets = array_values(array_filter(
+            $blocks,
+            static fn (array $block): bool => ($block['type'] ?? null) === 'bulleted_list_item'
+                && (($block['bulleted_list_item']['rich_text'][2]['text']['link']['url'] ?? null) === 'https://notion.example/page?a=1&b=2')
+        ));
+        self::assertNotEmpty($linkedBullets);
+
+        $tables = array_values(array_filter(
+            $blocks,
+            static fn (array $block): bool => ($block['type'] ?? null) === 'table'
+        ));
+        self::assertNotEmpty($tables);
+        self::assertSame(3, $tables[0]['table']['table_width']);
+        self::assertFalse($tables[0]['table']['has_column_header']);
+
+        $tableRows = [];
+        foreach ($tables as $table) {
+            foreach ($table['table']['children'] as $child) {
+                $tableRows[] = $child['table_row']['cells'];
+            }
+        }
+
+        $findTableRow = static function (array $rows, string $title): ?array {
+            foreach ($rows as $row) {
+                if (($row[1][0]['text']['content'] ?? null) === $title) {
+                    return $row;
+                }
+            }
+
+            return null;
+        };
+
+        $tomorrowRow = $findTableRow($tableRows, '明日の予定');
+        self::assertNotNull($tomorrowRow);
+        self::assertSame('18:00', $tomorrowRow[0][0]['text']['content']);
+        self::assertSame('翌日案件', $tomorrowRow[2][0]['text']['content']);
+
+        $deadlineRow = $findTableRow($tableRows, '期限タスク');
+        self::assertNotNull($deadlineRow);
+        self::assertSame('18:00', $deadlineRow[0][0]['text']['content']);
+        self::assertSame('決済システム', $deadlineRow[2][0]['text']['content']);
+
+        $upcomingRow = $findTableRow($tableRows, '来週の確認');
+        self::assertNotNull($upcomingRow);
+        self::assertSame('10:00', $upcomingRow[0][0]['text']['content']);
+        self::assertSame('https://notion.example/upcoming', $upcomingRow[1][0]['text']['link']['url']);
+        self::assertSame('案件A', $upcomingRow[2][0]['text']['content']);
+        self::assertNull($findTableRow($tableRows, '時間なし予定'));
+
+        $untimedBulletIndex = null;
+        $upcomingTableIndex = null;
+        foreach ($blocks as $index => $block) {
+            if (($block['type'] ?? null) === 'bulleted_list_item'
+                && (($block['bulleted_list_item']['rich_text'][0]['text']['content'] ?? null) === '時間なし予定')
+            ) {
+                $untimedBulletIndex = $index;
+            }
+
+            if (($block['type'] ?? null) !== 'table') {
+                continue;
+            }
+
+            foreach ($block['table']['children'] as $child) {
+                if (($child['table_row']['cells'][1][0]['text']['content'] ?? null) === '来週の確認') {
+                    $upcomingTableIndex = $index;
+                    break 2;
+                }
+            }
+        }
+        self::assertNotNull($untimedBulletIndex);
+        self::assertNotNull($upcomingTableIndex);
+        self::assertLessThan($upcomingTableIndex, $untimedBulletIndex);
+
+        $identityCallouts = array_values(array_filter(
+            $blocks,
+            static fn (array $block): bool => ($block['type'] ?? null) === 'callout'
+                && (($block['callout']['icon']['emoji'] ?? null) === '🪪')
+        ));
+        self::assertNotEmpty($identityCallouts);
+        self::assertSame('heading_3', $identityCallouts[0]['callout']['children'][0]['type']);
+        self::assertSame('bulleted_list_item', $identityCallouts[0]['callout']['children'][1]['type']);
+        self::assertSame(
+            'TECHCOMBANK(Debid Card)',
+            $identityCallouts[0]['callout']['children'][1]['bulleted_list_item']['rich_text'][0]['text']['content']
+        );
+    }
+
+    public function testRendersNotionEmptySectionsAsBulletedNoMatchMessage(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $today = new DateTimeImmutable('2026-04-22', $timezone);
+        $builder = new ReportBuilder($timezone);
+        $items = $builder->classifyAndSort([
+            $this->extractedItem('今日の確認', '2026-04-22', 'ToDo', '今日やるべき作業の確認', '2026-04-22T09:00:00+07:00'),
+        ], $today);
+
+        $blocks = $builder->renderNotionBlocks(null, $items, $today);
+        $nextBlockAfterHeading = static function (array $blocks, string $heading): ?array {
+            foreach ($blocks as $index => $block) {
+                if (($block['type'] ?? null) !== 'heading_2') {
+                    continue;
+                }
+
+                if (($block['heading_2']['rich_text'][0]['text']['content'] ?? null) === $heading) {
+                    return $blocks[$index + 1] ?? null;
+                }
+            }
+
+            return null;
+        };
+
+        foreach (['⏰ 明日の時間付き予定', '⚠️ 本日期限', '📌 近日確認'] as $heading) {
+            $block = $nextBlockAfterHeading($blocks, $heading);
+            self::assertSame('bulleted_list_item', $block['type'] ?? null);
+            self::assertSame('該当なし', $block['bulleted_list_item']['rich_text'][0]['text']['content'] ?? null);
+        }
+    }
+
     public function testUsesOpenAISummaryForSlackAndMailWhenConfigured(): void
     {
         $timezone = new DateTimeZone('Asia/Saigon');
@@ -474,6 +633,136 @@ final class DailyReportCommandTest extends TestCase
         self::assertNull($slack->sentText);
         self::assertNull($mail->sentBody);
         self::assertNull($mail->sentSubject);
+    }
+
+    public function testCreatesNotionReportWhenConfigured(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $notion = new StubNotionClient([
+            $this->page('Today task', '2026-04-16', '未着手'),
+        ]);
+        $config = $this->config();
+        $config['notion_report'] = [
+            'enabled' => true,
+            'data_source_id' => 'report-source-id',
+            'title_property' => 'レポート名',
+            'date_property' => '対象日',
+            'run_id_property' => 'Run ID',
+        ];
+
+        $command = new DailyReportCommand(
+            $config,
+            $notion,
+            new PropertyExtractor($timezone),
+            new DateFilter($timezone),
+            new ReportBuilder($timezone),
+            new Logger($logPath, $timezone),
+            $timezone,
+            false,
+            null,
+            new StubOpenAIClient('OpenAIコメント')
+        );
+
+        ob_start();
+        $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
+        $output = (string) ob_get_clean();
+
+        self::assertSame(0, $exitCode);
+        self::assertSame('', $output);
+        self::assertCount(1, $notion->createdPages);
+        self::assertSame('report-source-id', $notion->createdPages[0]['data_source_id']);
+        self::assertSame('Notion Daily Report 2026-04-16', $notion->createdPages[0]['properties']['レポート名']['title'][0]['text']['content']);
+        self::assertSame('2026-04-16', $notion->createdPages[0]['properties']['対象日']['date']['start']);
+        self::assertArrayHasKey('Run ID', $notion->createdPages[0]['properties']);
+        self::assertSame('callout', $notion->createdPages[0]['children'][0]['type']);
+        self::assertSame('🤖', $notion->createdPages[0]['children'][0]['callout']['icon']['emoji']);
+
+        $log = (string) file_get_contents($logPath);
+        self::assertStringContainsString('notion_report_created', $log);
+        self::assertStringContainsString('"notion_report_status":"sent"', $log);
+        self::assertStringContainsString('"notion_report_page_url":"https://notion.example/created-report"', $log);
+    }
+
+    public function testContinuesWhenNotionReportCreationFails(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $mail = new StubMailNotifier();
+        $config = $this->config();
+        $config['notion_report'] = [
+            'enabled' => true,
+            'data_source_id' => 'report-source-id',
+            'title_property' => 'Name',
+            'date_property' => 'Date',
+        ];
+
+        $command = new DailyReportCommand(
+            $config,
+            new StubNotionClient(
+                [$this->page('Today task', '2026-04-16', '未着手')],
+                [],
+                new RuntimeException('Notion write failed.')
+            ),
+            new PropertyExtractor($timezone),
+            new DateFilter($timezone),
+            new ReportBuilder($timezone),
+            new Logger($logPath, $timezone),
+            $timezone,
+            false,
+            null,
+            null,
+            $mail
+        );
+
+        ob_start();
+        $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
+        $output = (string) ob_get_clean();
+
+        self::assertSame(0, $exitCode);
+        self::assertSame('', $output);
+        self::assertStringContainsString('Today task', (string) $mail->sentBody);
+
+        $log = (string) file_get_contents($logPath);
+        self::assertStringContainsString('notion_report_failed', $log);
+        self::assertStringContainsString('"notion_report_status":"failed"', $log);
+        self::assertStringContainsString('"mail_status":"sent"', $log);
+    }
+
+    public function testSkipsNotionReportWhenDisabled(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $notion = new StubNotionClient([
+            $this->page('Today task', '2026-04-16', '未着手'),
+        ]);
+        $config = $this->config();
+        $config['notion_report'] = [
+            'enabled' => false,
+            'data_source_id' => 'report-source-id',
+        ];
+
+        $command = new DailyReportCommand(
+            $config,
+            $notion,
+            new PropertyExtractor($timezone),
+            new DateFilter($timezone),
+            new ReportBuilder($timezone),
+            new Logger($logPath, $timezone),
+            $timezone,
+            false
+        );
+
+        ob_start();
+        $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
+        ob_end_clean();
+
+        self::assertSame(0, $exitCode);
+        self::assertSame([], $notion->createdPages);
+
+        $log = (string) file_get_contents($logPath);
+        self::assertStringContainsString('notion_report_skipped', $log);
+        self::assertStringContainsString('"notion_report_status":"disabled"', $log);
     }
 
     public function testContinuesMailDeliveryWhenSlackNotificationFails(): void
@@ -1093,12 +1382,18 @@ final class DailyReportCommandTest extends TestCase
 final class StubNotionClient implements NotionClientInterface
 {
     /**
+     * @var array<int, array<string, mixed>>
+     */
+    public array $createdPages = [];
+
+    /**
      * @param array<int, array<string, mixed>> $pages
      * @param array<string, array<string, mixed>> $relatedPages
      */
     public function __construct(
         private readonly array $pages,
-        private readonly array $relatedPages = []
+        private readonly array $relatedPages = [],
+        private readonly ?RuntimeException $createException = null
     )
     {
     }
@@ -1120,6 +1415,24 @@ final class StubNotionClient implements NotionClientInterface
     public function retrievePage(string $pageId): array
     {
         return $this->relatedPages[$pageId] ?? [];
+    }
+
+    public function createPage(string $dataSourceId, array $properties, array $children = []): array
+    {
+        if ($this->createException !== null) {
+            throw $this->createException;
+        }
+
+        $this->createdPages[] = [
+            'data_source_id' => $dataSourceId,
+            'properties' => $properties,
+            'children' => $children,
+        ];
+
+        return [
+            'id' => 'created-report',
+            'url' => 'https://notion.example/created-report',
+        ];
     }
 }
 

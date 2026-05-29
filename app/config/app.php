@@ -108,6 +108,13 @@ return [
         'version' => $env('NOTION_VERSION', '2026-03-11'),
         'timeout' => (int) $env('NOTION_TIMEOUT', 20),
     ],
+    'notion_report' => [
+        'enabled' => $envBool('REPORT_NOTION_ENABLED', false),
+        'data_source_id' => $env('REPORT_NOTION_DATA_SOURCE_ID', ''),
+        'title_property' => $env('REPORT_NOTION_TITLE_PROPERTY', 'Name'),
+        'date_property' => $env('REPORT_NOTION_DATE_PROPERTY', 'Date'),
+        'run_id_property' => $env('REPORT_NOTION_RUN_ID_PROPERTY', ''),
+    ],
     'slack' => [
         'enabled' => $envBool('SLACK_ENABLED', true),
         'webhook_url' => $env('SLACK_WEBHOOK_URL', ''),

@@ -14,6 +14,7 @@ use Psr\Http\Message\ResponseInterface;
 final class NotionClient implements NotionClientInterface
 {
     private const BASE_URI = 'https://api.notion.com';
+    private const MAX_CHILDREN_PER_REQUEST = 100;
 
     private ClientInterface $client;
 
@@ -105,6 +106,58 @@ final class NotionClient implements NotionClientInterface
     }
 
     /**
+     * @param array<string, mixed> $properties
+     * @param array<int, array<string, mixed>> $children
+     * @return array<string, mixed>
+     */
+    public function createPage(string $dataSourceId, array $properties, array $children = []): array
+    {
+        $this->assertConfigured($dataSourceId);
+        $dataSourceId = trim($dataSourceId);
+
+        $payload = [
+            'parent' => [
+                'type' => 'data_source_id',
+                'data_source_id' => $dataSourceId,
+            ],
+            'icon' => [
+                'type' => 'emoji',
+                'emoji' => '📁',
+            ],
+            'properties' => $properties,
+        ];
+
+        $initialChildren = array_slice($children, 0, self::MAX_CHILDREN_PER_REQUEST);
+        if ($initialChildren !== []) {
+            $payload['children'] = $initialChildren;
+        }
+
+        try {
+            $response = $this->client->request(
+                'POST',
+                '/v1/pages',
+                [
+                    'headers' => $this->requestHeaders(),
+                    'json' => $payload,
+                ]
+            );
+        } catch (RequestException $exception) {
+            throw $this->createRequestException('create page in data source', $dataSourceId, $exception);
+        } catch (GuzzleException $exception) {
+            throw new NotionApiException('Notion API request failed: ' . $exception->getMessage(), 0, $exception);
+        }
+
+        $page = $this->decodeResponse($response);
+        $pageId = isset($page['id']) && is_string($page['id']) ? $page['id'] : '';
+        $remainingChildren = array_slice($children, self::MAX_CHILDREN_PER_REQUEST);
+        if ($pageId !== '' && $remainingChildren !== []) {
+            $this->appendBlockChildren($pageId, $remainingChildren);
+        }
+
+        return $page;
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @param array<int, string> $filterPropertyIds
      * @return array<string, mixed>
@@ -182,6 +235,31 @@ final class NotionClient implements NotionClientInterface
             $databaseId,
             implode(', ', $choices)
         ));
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $children
+     */
+    private function appendBlockChildren(string $blockId, array $children): void
+    {
+        foreach (array_chunk($children, self::MAX_CHILDREN_PER_REQUEST) as $chunk) {
+            try {
+                $this->client->request(
+                    'PATCH',
+                    sprintf('/v1/blocks/%s/children', rawurlencode($blockId)),
+                    [
+                        'headers' => $this->requestHeaders(),
+                        'json' => [
+                            'children' => $chunk,
+                        ],
+                    ]
+                );
+            } catch (RequestException $exception) {
+                throw $this->createRequestException('append block children', $blockId, $exception);
+            } catch (GuzzleException $exception) {
+                throw new NotionApiException('Notion API request failed: ' . $exception->getMessage(), 0, $exception);
+            }
+        }
     }
 
     private function assertConfigured(string $dataSourceId): void

@@ -132,6 +132,7 @@ final class DailyReportCommand
             $report = $this->reportBuilder->renderReport($comment, $schedule);
             $slackReport = $this->reportBuilder->renderReport($comment, $slackSchedule, ReportBuilder::FORMAT_SLACK);
             $mailHtmlReport = $this->reportBuilder->renderReport($comment, $mailHtmlSchedule, ReportBuilder::FORMAT_HTML);
+            $notionReportResult = $this->saveNotionReport($comment, $classified, $today, $runId);
             $slackStatus = $this->sendSlackReport($slackReport, $runId);
             $mailStatus = $this->sendMailReport($mailHtmlReport, $report, $today, $runId);
 
@@ -141,6 +142,9 @@ final class DailyReportCommand
                 'exit_code' => 0,
                 'duration_ms' => $this->durationMs($startedAtFloat),
                 'report_size_bytes' => strlen($report),
+                'notion_report_status' => $notionReportResult['status'],
+                'notion_report_page_id' => $notionReportResult['page_id'],
+                'notion_report_page_url' => $notionReportResult['page_url'],
                 'slack_status' => $slackStatus,
                 'mail_status' => $mailStatus,
             ]);
@@ -532,6 +536,110 @@ final class DailyReportCommand
         }
 
         return 'OPENAI_API_KEY is not configured.';
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array{status: string, page_id: ?string, page_url: ?string}
+     */
+    private function saveNotionReport(?string $comment, array $items, DateTimeImmutable $today, string $runId): array
+    {
+        $reportConfig = $this->config['notion_report'] ?? [];
+        if (!is_array($reportConfig) || ($reportConfig['enabled'] ?? false) !== true) {
+            $this->logger->info('notion_report_skipped', [
+                'run_id' => $runId,
+                'reason' => 'Notion report creation is disabled.',
+            ]);
+            return ['status' => 'disabled', 'page_id' => null, 'page_url' => null];
+        }
+
+        $dataSourceId = trim((string) ($reportConfig['data_source_id'] ?? ''));
+        if ($dataSourceId === '') {
+            $this->logger->info('notion_report_skipped', [
+                'run_id' => $runId,
+                'reason' => 'REPORT_NOTION_DATA_SOURCE_ID is not configured.',
+            ]);
+            return ['status' => 'not_configured', 'page_id' => null, 'page_url' => null];
+        }
+
+        $title = sprintf('Notion Daily Report %s', $today->setTimezone($this->timezone)->format('Y-m-d'));
+        $properties = $this->notionReportProperties($reportConfig, $title, $today, $runId);
+        $children = $this->reportBuilder->renderNotionBlocks($comment, $items, $today);
+
+        try {
+            $page = $this->notionClient->createPage($dataSourceId, $properties, $children);
+        } catch (Throwable $exception) {
+            $this->logger->error('notion_report_failed', [
+                'run_id' => $runId,
+                'data_source_id' => $dataSourceId,
+                'exception_class' => $exception::class,
+                'error' => $exception->getMessage(),
+            ]);
+            return ['status' => 'failed', 'page_id' => null, 'page_url' => null];
+        }
+
+        $pageId = isset($page['id']) && is_string($page['id']) ? $page['id'] : null;
+        $pageUrl = isset($page['url']) && is_string($page['url']) ? $page['url'] : null;
+        $this->logger->info('notion_report_created', [
+            'run_id' => $runId,
+            'data_source_id' => $dataSourceId,
+            'page_id' => $pageId,
+            'page_url' => $pageUrl,
+            'block_count' => count($children),
+        ]);
+
+        return ['status' => 'sent', 'page_id' => $pageId, 'page_url' => $pageUrl];
+    }
+
+    /**
+     * @param array<string, mixed> $reportConfig
+     * @return array<string, mixed>
+     */
+    private function notionReportProperties(array $reportConfig, string $title, DateTimeImmutable $today, string $runId): array
+    {
+        $titleProperty = trim((string) ($reportConfig['title_property'] ?? 'Name'));
+        if ($titleProperty === '') {
+            $titleProperty = 'Name';
+        }
+
+        $dateProperty = trim((string) ($reportConfig['date_property'] ?? 'Date'));
+        if ($dateProperty === '') {
+            $dateProperty = 'Date';
+        }
+
+        $properties = [
+            $titleProperty => [
+                'title' => [
+                    [
+                        'type' => 'text',
+                        'text' => [
+                            'content' => $title,
+                        ],
+                    ],
+                ],
+            ],
+            $dateProperty => [
+                'date' => [
+                    'start' => $today->setTimezone($this->timezone)->format('Y-m-d'),
+                ],
+            ],
+        ];
+
+        $runIdProperty = trim((string) ($reportConfig['run_id_property'] ?? ''));
+        if ($runIdProperty !== '') {
+            $properties[$runIdProperty] = [
+                'rich_text' => [
+                    [
+                        'type' => 'text',
+                        'text' => [
+                            'content' => $runId,
+                        ],
+                    ],
+                ],
+            ];
+        }
+
+        return $properties;
     }
 
     private function sendMailReport(string $htmlReport, string $plainReport, DateTimeImmutable $today, string $runId): string

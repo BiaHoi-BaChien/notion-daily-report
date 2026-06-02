@@ -144,6 +144,72 @@ final class ReportBuilder
         return sprintf("%s%s%s%s", $this->formatText($comment, $format), PHP_EOL . PHP_EOL, rtrim($schedule), PHP_EOL);
     }
 
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array<int, array<string, mixed>>
+     */
+    public function renderNotionBlocks(?string $comment, array $items, DateTimeImmutable $today): array
+    {
+        $today = $today->setTimezone($this->timezone);
+        $blocks = [];
+
+        $comment = trim((string) $comment);
+        if ($comment !== '') {
+            $blocks[] = $this->notionCallout('🤖', $this->notionText($comment));
+        }
+
+        $blocks[] = $this->notionHeading(2, '🔥 今日の予定');
+        $this->appendNotionTable($blocks, $this->todayTodoItems($items), true);
+
+        $blocks[] = $this->notionHeading(2, '⏰ 明日の時間付き予定');
+        $this->appendNotionTable($blocks, $this->tomorrowTimedTodoAndCalendarItems($items, $today), true);
+
+        $blocks[] = $this->notionHeading(2, '⚠️ 本日期限');
+        $this->appendNotionTable($blocks, $this->todayProjectTaskItems($items), true);
+
+        $blocks[] = $this->notionHeading(2, '📌 近日確認');
+        $this->appendNotionGroupedRows($blocks, $this->upcomingItems($items, $today), $today, true, true);
+
+        $childLunches = $this->childLunchItems($items);
+        $identityDocuments = $this->identityDocumentItems($items);
+        if ($childLunches !== [] || $identityDocuments !== []) {
+            $blocks[] = $this->notionHeading(2, '💡 その他トピックス');
+
+            foreach ($this->sortRows($childLunches, true) as $childLunch) {
+                $text = $this->childLunchText($childLunch);
+                if ($text !== null) {
+                    $blocks[] = $this->notionCallout(
+                        '🍱',
+                        $this->notionText(sprintf('今日の子供のお弁当は「%s」です。', $text))
+                    );
+                }
+            }
+
+            if ($identityDocuments !== []) {
+                $identityChildren = [];
+                $currentDate = null;
+                foreach ($this->sortRows($identityDocuments, true) as $item) {
+                    $start = $this->dateTimeFromItem($item, 'date_start');
+                    $dateKey = $this->dateGroupKey($start);
+                    if ($dateKey !== $currentDate) {
+                        $identityChildren[] = $this->notionHeading(3, $this->identityDocumentDateLabel($start, $today));
+                        $currentDate = $dateKey;
+                    }
+
+                    $identityChildren[] = $this->notionBullet($this->notionTitleText($item));
+                }
+
+                $blocks[] = $this->notionCallout(
+                    '🪪',
+                    $this->notionText('以下の身分証明書の有効期限が近づいています。'),
+                    $identityChildren
+                );
+            }
+        }
+
+        return $blocks;
+    }
+
     private function todayHeader(DateTimeImmutable $today): string
     {
         $today = $today->setTimezone($this->timezone);
@@ -401,6 +467,85 @@ final class ReportBuilder
     }
 
     /**
+     * @param array<int, array<string, mixed>> $blocks
+     * @param array<int, array<string, mixed>> $items
+     */
+    private function appendNotionRows(array &$blocks, array $items, bool $includeDate, bool $includeGroup, bool $callout): void
+    {
+        if ($items === []) {
+            $blocks[] = $this->notionCallout('✅', $this->notionText('該当なし'));
+            return;
+        }
+
+        foreach ($this->sortRows($items, $includeDate) as $item) {
+            $richText = $this->notionRowText($item, $includeDate, $includeGroup);
+            $blocks[] = $callout ? $this->notionCallout(null, $richText) : $this->notionBullet($richText);
+        }
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $blocks
+     * @param array<int, array<string, mixed>> $items
+     */
+    private function appendNotionTable(array &$blocks, array $items, bool $includeGroup): void
+    {
+        if ($items === []) {
+            $blocks[] = $this->notionBullet($this->notionText('該当なし'));
+            return;
+        }
+
+        $rows = [];
+        foreach ($this->sortNotionTableRows($items) as $item) {
+            $rows[] = $this->notionItemTableRow($item, $includeGroup);
+        }
+
+        $blocks[] = $this->notionTable($rows);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $blocks
+     * @param array<int, array<string, mixed>> $items
+     */
+    private function appendNotionGroupedRows(
+        array &$blocks,
+        array $items,
+        DateTimeImmutable $today,
+        bool $includeDate,
+        bool $includeGroup
+    ): void {
+        if ($items === []) {
+            $blocks[] = $this->notionBullet($this->notionText('該当なし'));
+            return;
+        }
+
+        $currentDate = null;
+        $tableRows = [];
+        foreach ($this->sortNotionTableRows($items) as $item) {
+            $start = $this->dateTimeFromItem($item, 'date_start');
+            $dateKey = $this->dateGroupKey($start);
+            if ($dateKey !== $currentDate) {
+                if ($tableRows !== []) {
+                    $blocks[] = $this->notionTable($tableRows);
+                    $tableRows = [];
+                }
+
+                $blocks[] = $this->notionHeading(3, $this->upcomingDateLabel($start, $today));
+                $currentDate = $dateKey;
+            }
+
+            if (($item['date_has_time'] ?? false) === true) {
+                $tableRows[] = $this->notionItemTableRow($item, $includeGroup);
+            } else {
+                $blocks[] = $this->notionBullet($this->notionTitleText($item));
+            }
+        }
+
+        if ($tableRows !== []) {
+            $blocks[] = $this->notionTable($tableRows);
+        }
+    }
+
+    /**
      * @param array<string, mixed> $item
      */
     private function rowText(array $item, bool $includeDate, bool $includeGroup, string $format): string
@@ -438,6 +583,39 @@ final class ReportBuilder
         }
 
         return $cells;
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     * @return array<int, array<string, mixed>>
+     */
+    private function notionRowText(array $item, bool $includeDate, bool $includeGroup): array
+    {
+        $richText = [];
+        $hasPreviousPart = false;
+        $dateText = $this->dateText($item, $includeDate);
+        if ($dateText !== '' && $dateText !== '終日') {
+            $richText = array_merge($richText, $this->notionText($dateText));
+            $hasPreviousPart = true;
+        }
+
+        if ($hasPreviousPart) {
+            $richText = array_merge($richText, $this->notionText('｜'));
+        }
+        $richText = array_merge($richText, $this->notionTitleText($item));
+        $hasPreviousPart = true;
+
+        if ($includeGroup) {
+            $group = $this->displayGroupName($item);
+            if ($group !== null) {
+                if ($hasPreviousPart) {
+                    $richText = array_merge($richText, $this->notionText('｜'));
+                }
+                $richText = array_merge($richText, $this->notionText($group));
+            }
+        }
+
+        return $richText;
     }
 
     /**
@@ -482,6 +660,145 @@ final class ReportBuilder
         }
 
         return trim($url);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function notionHeading(int $level, string $text): array
+    {
+        $type = match ($level) {
+            3 => 'heading_3',
+            default => 'heading_2',
+        };
+
+        return [
+            'object' => 'block',
+            'type' => $type,
+            $type => [
+                'rich_text' => $this->notionText($text),
+                'color' => $type === 'heading_2' ? 'yellow_background' : 'default',
+            ],
+        ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $richText
+     * @param array<int, array<string, mixed>> $children
+     * @return array<string, mixed>
+     */
+    private function notionBullet(array $richText): array
+    {
+        return [
+            'object' => 'block',
+            'type' => 'bulleted_list_item',
+            'bulleted_list_item' => [
+                'rich_text' => $richText,
+            ],
+        ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $richText
+     * @return array<string, mixed>
+     */
+    private function notionCallout(?string $emoji, array $richText, array $children = []): array
+    {
+        $callout = [
+            'object' => 'block',
+            'type' => 'callout',
+            'callout' => [
+                'rich_text' => $richText,
+            ],
+        ];
+
+        if ($children !== []) {
+            $callout['callout']['children'] = $children;
+        }
+
+        if ($emoji !== null) {
+            $callout['callout']['icon'] = [
+                'type' => 'emoji',
+                'emoji' => $emoji,
+            ];
+        }
+
+        return $callout;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<string, mixed>
+     */
+    private function notionTable(array $rows): array
+    {
+        return [
+            'object' => 'block',
+            'type' => 'table',
+            'table' => [
+                'table_width' => 3,
+                'has_column_header' => false,
+                'has_row_header' => false,
+                'children' => $rows,
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     * @return array<string, mixed>
+     */
+    private function notionItemTableRow(array $item, bool $includeGroup): array
+    {
+        $group = $includeGroup ? $this->displayGroupName($item) : null;
+        $time = $this->dateText($item, false);
+        if ($time === '終日') {
+            $time = '';
+        }
+
+        return [
+            'object' => 'block',
+            'type' => 'table_row',
+            'table_row' => [
+                'cells' => [
+                    $time === '' ? [] : $this->notionText($time),
+                    $this->notionTitleText($item),
+                    $group === null ? [] : $this->notionText($group),
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     * @return array<int, array<string, mixed>>
+     */
+    private function notionTitleText(array $item): array
+    {
+        $title = (string) ($item['title'] ?? '無題');
+        return $this->notionText($title, $this->notionUrl($item));
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function notionText(string $text, ?string $href = null): array
+    {
+        $text = $text === '' ? ' ' : $text;
+        $chunks = str_split($text, 1800);
+        if ($chunks === []) {
+            $chunks = [' '];
+        }
+
+        return array_map(static function (string $chunk) use ($href): array {
+            return [
+                'type' => 'text',
+                'text' => [
+                    'content' => $chunk,
+                    'link' => $href === null ? null : ['url' => $href],
+                ],
+            ];
+        }, $chunks);
     }
 
     private function escapeSlackText(string $text): string
@@ -564,6 +881,47 @@ final class ReportBuilder
 
             if ($leftDate !== $rightDate) {
                 return $leftDate <=> $rightDate;
+            }
+
+            return [
+                $this->groupPriority($this->groupName($left)),
+                $this->groupName($left),
+                $left['title'] ?? '',
+            ] <=> [
+                $this->groupPriority($this->groupName($right)),
+                $this->groupName($right),
+                $right['title'] ?? '',
+            ];
+        });
+
+        return $items;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function sortNotionTableRows(array $items): array
+    {
+        usort($items, function (array $left, array $right): int {
+            $leftDate = $this->dateTimeFromItem($left, 'date_start');
+            $rightDate = $this->dateTimeFromItem($right, 'date_start');
+            $leftDateKey = $this->dateGroupKey($leftDate);
+            $rightDateKey = $this->dateGroupKey($rightDate);
+            if ($leftDateKey !== $rightDateKey) {
+                return $leftDateKey <=> $rightDateKey;
+            }
+
+            $leftHasTime = ($left['date_has_time'] ?? false) === true;
+            $rightHasTime = ($right['date_has_time'] ?? false) === true;
+            if ($leftHasTime !== $rightHasTime) {
+                return $leftHasTime <=> $rightHasTime;
+            }
+
+            $leftSortDate = $leftDate?->format(DATE_ATOM) ?? '9999-12-31T23:59:59+00:00';
+            $rightSortDate = $rightDate?->format(DATE_ATOM) ?? '9999-12-31T23:59:59+00:00';
+            if ($leftSortDate !== $rightSortDate) {
+                return $leftSortDate <=> $rightSortDate;
             }
 
             return [

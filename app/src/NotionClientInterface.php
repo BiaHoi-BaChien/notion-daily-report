@@ -17,4 +17,11 @@ interface NotionClientInterface
      * @return array<string, mixed>
      */
     public function retrievePage(string $pageId): array;
+
+    /**
+     * @param array<string, mixed> $properties
+     * @param array<int, array<string, mixed>> $children
+     * @return array<string, mixed>
+     */
+    public function createPage(string $dataSourceId, array $properties, array $children = []): array;
 }

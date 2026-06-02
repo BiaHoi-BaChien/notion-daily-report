@@ -178,4 +178,96 @@ final class NotionClientTest extends TestCase
         self::assertSame('GET', $history[0]['request']->getMethod());
         self::assertSame('/v1/pages/page-id', $history[0]['request']->getUri()->getPath());
     }
+
+    public function testCreatesPageInDataSourceWithPropertiesAndChildren(): void
+    {
+        $history = [];
+        $mock = new MockHandler([
+            new Response(200, [], json_encode([
+                'id' => 'created-page-id',
+                'url' => 'https://notion.example/created-page-id',
+            ])),
+        ]);
+
+        $stack = HandlerStack::create($mock);
+        $stack->push(Middleware::history($history));
+        $httpClient = new Client([
+            'base_uri' => 'https://api.notion.com',
+            'handler' => $stack,
+        ]);
+
+        $client = new NotionClient('secret-token', '2026-03-11', 20, $httpClient);
+        $page = $client->createPage(
+            'report-source-id',
+            [
+                'Name' => [
+                    'title' => [
+                        [
+                            'type' => 'text',
+                            'text' => ['content' => 'Notion Daily Report 2026-04-16'],
+                        ],
+                    ],
+                ],
+                'Date' => [
+                    'date' => ['start' => '2026-04-16'],
+                ],
+            ],
+            [
+                [
+                    'object' => 'block',
+                    'type' => 'heading_1',
+                    'heading_1' => [
+                        'rich_text' => [
+                            [
+                                'type' => 'text',
+                                'text' => ['content' => '🗓 Notion Daily Report 2026-04-16'],
+                            ],
+                        ],
+                    ],
+                ],
+            ]
+        );
+
+        self::assertSame('created-page-id', $page['id']);
+        self::assertCount(1, $history);
+        $request = $history[0]['request'];
+        self::assertSame('POST', $request->getMethod());
+        self::assertSame('/v1/pages', $request->getUri()->getPath());
+        self::assertSame('2026-03-11', $request->getHeaderLine('Notion-Version'));
+
+        $body = json_decode((string) $request->getBody(), true);
+        self::assertSame('data_source_id', $body['parent']['type']);
+        self::assertSame('report-source-id', $body['parent']['data_source_id']);
+        self::assertSame('emoji', $body['icon']['type']);
+        self::assertSame('📁', $body['icon']['emoji']);
+        self::assertSame('Notion Daily Report 2026-04-16', $body['properties']['Name']['title'][0]['text']['content']);
+        self::assertSame('2026-04-16', $body['properties']['Date']['date']['start']);
+        self::assertSame('heading_1', $body['children'][0]['type']);
+    }
+
+    public function testCreatePageThrowsDetailedNotionException(): void
+    {
+        $mock = new MockHandler([
+            new Response(400, [], json_encode([
+                'object' => 'error',
+                'status' => 400,
+                'code' => 'validation_error',
+                'message' => 'Name is expected to be title.',
+            ])),
+        ]);
+
+        $httpClient = new Client([
+            'base_uri' => 'https://api.notion.com',
+            'handler' => HandlerStack::create($mock),
+        ]);
+
+        $client = new NotionClient('secret-token', '2026-03-11', 20, $httpClient);
+
+        $this->expectException(NotionApiException::class);
+        $this->expectExceptionMessage('create page in data source');
+        $this->expectExceptionMessage('validation_error');
+        $this->expectExceptionMessage('Name is expected to be title.');
+
+        $client->createPage('report-source-id', ['Name' => ['title' => []]]);
+    }
 }

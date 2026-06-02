@@ -99,6 +99,8 @@ The OpenAI API requires a model in each request; there is no server-side `AUTO` 
 
 SMTP settings are optional. Mail is sent only when `MAIL_ENABLED=true` and `SMTP_HOST`, `MAIL_FROM`, and `MAIL_TO` are configured. `MAIL_TO` accepts comma-separated recipients. Set `MAIL_ENABLED=false` to skip email even when SMTP settings are configured.
 
+Notion report creation is optional. Set `REPORT_NOTION_ENABLED=true` and `REPORT_NOTION_DATA_SOURCE_ID` to save each daily report as a page in a Notion data source. The page body starts with the OpenAI comment callout and is generated with Notion blocks: `heading_2`, `heading_3`, icon callouts, linked bullet items, and three-column upcoming-item tables. It intentionally does not use duplicate title headings or `divider` blocks. Configure `REPORT_NOTION_TITLE_PROPERTY`, `REPORT_NOTION_DATE_PROPERTY`, and optional `REPORT_NOTION_RUN_ID_PROPERTY` when your report data source uses different property names.
+
 ## Usage
 
 Run with today's date in `APP_TIMEZONE`:
@@ -137,9 +139,9 @@ Keep `.env` outside any public web root whenever possible.
 - Classifies items as `overdue`, `today`, `upcoming`, or `recent_past`
 - Formats the report locally in PHP by section, project, genre, and date/time
 - Sends the formatted schedule to OpenAI for an optional positive opening comment when configured
-- Sends the final report to Slack and email when configured, and writes JSON-line logs
+- Saves the final report to Notion, Slack, and email when configured, and writes JSON-line logs
 - Logs source-level start/completion/failure, fetch/extraction/filter counts, classification counts, notification status, report size, and run duration for operation checks
-- Logs Slack or email delivery failures without blocking the remaining delivery steps
+- Logs Notion, Slack, or email delivery failures without blocking the remaining delivery steps
 
 ## Tests
 

@@ -203,8 +203,8 @@ final class DailyReportCommandTest extends TestCase
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
         self::assertStringContainsString('🔥 今日の予定', $report);
-        self::assertStringContainsString('・09:30｜<https://notion.example/%E6%B1%BA%E6%B8%88%E7%A2%BA%E8%AA%8D|決済確認>', $report);
-        self::assertStringNotContainsString('決済確認｜決済システム', $report);
+        self::assertStringContainsString('時間｜予定｜分類', $report);
+        self::assertStringContainsString('09:30｜<https://notion.example/%E6%B1%BA%E6%B8%88%E7%A2%BA%E8%AA%8D|決済確認>｜決済システム', $report);
         self::assertStringContainsString('⚠ 本日期限', $report);
         self::assertStringContainsString('決済追加確認>｜決済システム', $report);
         self::assertStringContainsString('楽天ペイV2', $report);
@@ -325,7 +325,7 @@ final class DailyReportCommandTest extends TestCase
         $report = $builder->renderSchedule($items, $today);
 
         self::assertStringStartsWith('2026年04月17日（金）' . PHP_EOL, $report);
-        self::assertStringContainsString('・09:00｜Exact todo', $report);
+        self::assertStringContainsString('09:00｜Exact todo｜', $report);
         self::assertStringNotContainsString('Role-only todo', $report);
         self::assertStringContainsString('・Exact project task', $report);
         self::assertStringNotContainsString('Role-only project task', $report);
@@ -352,7 +352,8 @@ final class DailyReportCommandTest extends TestCase
         $report = $builder->renderSchedule($items, $today);
 
         self::assertStringContainsString('⏰ 明日の時間付き予定', $report);
-        self::assertStringContainsString('・18:00｜楽天ペイ未契約店舗の表示確認', $report);
+        self::assertStringContainsString('時間｜予定｜分類', $report);
+        self::assertStringContainsString('18:00｜楽天ペイ未契約店舗の表示確認｜', $report);
         self::assertStringNotContainsString('楽天ペイ未契約店舗の表示確認｜その他', $report);
         self::assertStringContainsString('📌 近日確認', $report);
         self::assertStringNotContainsString('明日 04/23（木）', $report);
@@ -384,14 +385,14 @@ final class DailyReportCommandTest extends TestCase
         $slackReport = $builder->renderSchedule($items, $today, ReportBuilder::FORMAT_SLACK);
         $htmlReport = $builder->renderSchedule($items, $today, ReportBuilder::FORMAT_HTML);
 
-        self::assertStringContainsString('・09:00｜確認 & <連絡>', $textReport);
-        self::assertStringContainsString('・09:00｜<https://notion.example/page?a=1&b=2|確認 &amp; &lt;連絡&gt;>', $slackReport);
+        self::assertStringContainsString('09:00｜確認 & <連絡>｜', $textReport);
+        self::assertStringContainsString('09:00｜<https://notion.example/page?a=1&b=2|確認 &amp; &lt;連絡&gt;>｜', $slackReport);
         self::assertStringContainsString(
-            '・09:00｜<a href="https://notion.example/page?a=1&amp;b=2">確認 &amp; &lt;連絡&gt;</a>',
+            '<td><a href="https://notion.example/page?a=1&amp;b=2">確認 &amp; &lt;連絡&gt;</a></td>',
             $htmlReport
         );
-        self::assertStringContainsString('・10:00｜URLなし', $slackReport);
-        self::assertStringContainsString('・10:00｜URLなし', $htmlReport);
+        self::assertStringContainsString('10:00｜URLなし｜', $slackReport);
+        self::assertStringContainsString('<td>URLなし</td>', $htmlReport);
     }
 
     public function testUsesOpenAISummaryForSlackAndMailWhenConfigured(): void
@@ -609,8 +610,7 @@ final class DailyReportCommandTest extends TestCase
         ob_end_clean();
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('・Today task', $openai->receivedSchedule);
-        self::assertStringNotContainsString('Today task｜決済システム', $openai->receivedSchedule);
+        self::assertStringContainsString('終日｜Today task｜決済システム', $openai->receivedSchedule);
     }
 
     public function testPassesCalendarGenreToOpenAISummary(): void

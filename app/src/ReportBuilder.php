@@ -67,17 +67,17 @@ final class ReportBuilder
         $lines[] = $this->todayHeader($today);
 
         $this->appendSectionHeader($lines, '🔥 今日の予定');
-        $this->appendRows(
+        $this->appendRowsTable(
             $lines,
             $this->todayTodoItems($items),
             false,
-            false,
+            true,
             $format
         );
         $lines[] = '';
 
         $this->appendSectionHeader($lines, '⏰ 明日の時間付き予定');
-        $this->appendRows(
+        $this->appendRowsTable(
             $lines,
             $this->tomorrowTimedTodoAndCalendarItems($items, $today),
             false,
@@ -159,7 +159,7 @@ final class ReportBuilder
         }
 
         $blocks[] = $this->notionHeading(2, '🔥 今日の予定');
-        $this->appendNotionRows($blocks, $this->todayTodoItems($items), false, false, false);
+        $this->appendNotionTable($blocks, $this->todayTodoItems($items), true);
 
         $blocks[] = $this->notionHeading(2, '⏰ 明日の時間付き予定');
         $this->appendNotionTable($blocks, $this->tomorrowTimedTodoAndCalendarItems($items, $today), true);
@@ -354,6 +354,64 @@ final class ReportBuilder
      * @param array<int, string> $lines
      * @param array<int, array<string, mixed>> $items
      */
+    private function appendRowsTable(array &$lines, array $items, bool $includeDate, bool $includeGroup, string $format): void
+    {
+        if ($items === []) {
+            $lines[] = '・該当なし';
+            return;
+        }
+
+        if ($format === self::FORMAT_HTML) {
+            $this->appendHtmlRowsTable($lines, $items, $includeDate, $includeGroup, $format);
+            return;
+        }
+
+        $headers = [$includeDate ? '日時' : '時間', '予定'];
+        if ($includeGroup) {
+            $headers[] = '分類';
+        }
+
+        $lines[] = implode('｜', $headers);
+        $lines[] = implode('｜', array_fill(0, count($headers), '---'));
+
+        foreach ($this->sortRows($items, $includeDate) as $item) {
+            $lines[] = implode('｜', $this->rowCells($item, $includeDate, $includeGroup, $format));
+        }
+    }
+
+    /**
+     * @param array<int, string> $lines
+     * @param array<int, array<string, mixed>> $items
+     */
+    private function appendHtmlRowsTable(array &$lines, array $items, bool $includeDate, bool $includeGroup, string $format): void
+    {
+        $headers = [$includeDate ? '日時' : '時間', '予定'];
+        if ($includeGroup) {
+            $headers[] = '分類';
+        }
+
+        $lines[] = '<table>';
+        $lines[] = '<thead><tr>';
+        foreach ($headers as $header) {
+            $lines[] = sprintf('<th>%s</th>', htmlspecialchars($header, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
+        }
+        $lines[] = '</tr></thead>';
+        $lines[] = '<tbody>';
+        foreach ($this->sortRows($items, $includeDate) as $item) {
+            $lines[] = '<tr>';
+            foreach ($this->rowCells($item, $includeDate, $includeGroup, $format) as $cell) {
+                $lines[] = sprintf('<td>%s</td>', $cell);
+            }
+            $lines[] = '</tr>';
+        }
+        $lines[] = '</tbody>';
+        $lines[] = '</table>';
+    }
+
+    /**
+     * @param array<int, string> $lines
+     * @param array<int, array<string, mixed>> $items
+     */
     private function appendGroupedRows(
         array &$lines,
         array $items,
@@ -508,6 +566,23 @@ final class ReportBuilder
         }
 
         return '・' . implode('｜', $parts);
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     * @return array<int, string>
+     */
+    private function rowCells(array $item, bool $includeDate, bool $includeGroup, string $format): array
+    {
+        $dateText = $this->dateText($item, $includeDate);
+        $cells = [$this->formatText($dateText === '' ? '日付不明' : $dateText, $format), $this->formatTitle($item, $format)];
+
+        if ($includeGroup) {
+            $group = $this->displayGroupName($item);
+            $cells[] = $group === null ? '' : $this->formatText($group, $format);
+        }
+
+        return $cells;
     }
 
     /**

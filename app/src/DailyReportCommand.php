@@ -572,9 +572,11 @@ final class DailyReportCommand
             $this->logger->error('notion_report_failed', [
                 'run_id' => $runId,
                 'data_source_id' => $dataSourceId,
+                'block_count' => count($children),
                 'exception_class' => $exception::class,
                 'error' => $exception->getMessage(),
             ]);
+            $this->sendNotionReportFailureMail($exception, $dataSourceId, count($children), $today, $runId);
             return ['status' => 'failed', 'page_id' => null, 'page_url' => null];
         }
 
@@ -640,6 +642,61 @@ final class DailyReportCommand
         }
 
         return $properties;
+    }
+
+    private function sendNotionReportFailureMail(
+        Throwable $reportException,
+        string $dataSourceId,
+        int $blockCount,
+        DateTimeImmutable $today,
+        string $runId
+    ): void {
+        if (!$this->isFeatureEnabled('mail')) {
+            $this->logger->info('notion_report_failure_mail_skipped', [
+                'run_id' => $runId,
+                'reason' => 'Mail notification is disabled.',
+            ]);
+            return;
+        }
+
+        if ($this->mailNotifier === null || !$this->mailNotifier->isConfigured()) {
+            $this->logger->info('notion_report_failure_mail_skipped', [
+                'run_id' => $runId,
+                'reason' => 'SMTP_HOST, MAIL_FROM, or MAIL_TO is not configured.',
+            ]);
+            return;
+        }
+
+        $reportDate = $today->setTimezone($this->timezone)->format('Y-m-d');
+        $subject = sprintf('Notion Daily Report failed %s', $reportDate);
+        $body = implode(PHP_EOL, [
+            sprintf('Notion Daily Report %s のNotionページ作成に失敗しました。', $reportDate),
+            '',
+            sprintf('run_id: %s', $runId),
+            sprintf('exception_class: %s', $reportException::class),
+            sprintf('error: %s', $reportException->getMessage()),
+            sprintf('REPORT_NOTION_DATA_SOURCE_ID: %s', $dataSourceId),
+            sprintf('notion_block_count: %d', $blockCount),
+            '',
+            '通常のmailレポート送信は継続します。',
+        ]);
+
+        try {
+            $this->mailNotifier->send($subject, $body);
+        } catch (Throwable $exception) {
+            $this->logger->error('notion_report_failure_mail_failed', [
+                'run_id' => $runId,
+                'exception_class' => $exception::class,
+                'error' => $exception->getMessage(),
+            ]);
+            return;
+        }
+
+        $this->logger->info('notion_report_failure_mail_sent', [
+            'run_id' => $runId,
+            'subject' => $subject,
+            'report_size_bytes' => strlen($body),
+        ]);
     }
 
     private function sendMailReport(string $htmlReport, string $plainReport, DateTimeImmutable $today, string $runId): string

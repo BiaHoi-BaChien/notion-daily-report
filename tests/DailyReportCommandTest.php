@@ -6,6 +6,7 @@ namespace Tests;
 
 use App\DailyReportCommand;
 use App\DateFilter;
+use App\Exception\NotionApiException;
 use App\Exception\OpenAIException;
 use App\Logger;
 use App\NotionClientInterface;
@@ -702,7 +703,7 @@ final class DailyReportCommandTest extends TestCase
             new StubNotionClient(
                 [$this->page('Today task', '2026-04-16', '未着手')],
                 [],
-                new RuntimeException('Notion write failed.')
+                new NotionApiException('Notion API request failed: json_encode error: Malformed UTF-8 characters, possibly incorrectly encoded')
             ),
             new PropertyExtractor($timezone),
             new DateFilter($timezone),
@@ -721,12 +722,108 @@ final class DailyReportCommandTest extends TestCase
 
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
+        self::assertCount(2, $mail->sentMessages);
+        self::assertSame('Notion Daily Report failed 2026-04-16', $mail->sentMessages[0]['subject']);
+        self::assertStringContainsString('Notionページ作成に失敗しました。', $mail->sentMessages[0]['body']);
+        self::assertStringContainsString('exception_class: App\Exception\NotionApiException', $mail->sentMessages[0]['body']);
+        self::assertStringContainsString('Malformed UTF-8 characters', $mail->sentMessages[0]['body']);
+        self::assertStringContainsString('REPORT_NOTION_DATA_SOURCE_ID: report-source-id', $mail->sentMessages[0]['body']);
+        self::assertStringContainsString('notion_block_count:', $mail->sentMessages[0]['body']);
+        self::assertStringContainsString('通常のmailレポート送信は継続します。', $mail->sentMessages[0]['body']);
+        self::assertSame('Notion Daily Report 2026-04-16', $mail->sentMessages[1]['subject']);
         self::assertStringContainsString('Today task', (string) $mail->sentBody);
 
         $log = (string) file_get_contents($logPath);
         self::assertStringContainsString('notion_report_failed', $log);
+        self::assertStringContainsString('"block_count":', $log);
+        self::assertStringContainsString('notion_report_failure_mail_sent', $log);
         self::assertStringContainsString('"notion_report_status":"failed"', $log);
         self::assertStringContainsString('"mail_status":"sent"', $log);
+    }
+
+    public function testCompletesWhenNotionReportFailureMailFails(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $config = $this->config();
+        $config['notion_report'] = [
+            'enabled' => true,
+            'data_source_id' => 'report-source-id',
+            'title_property' => 'Name',
+            'date_property' => 'Date',
+        ];
+
+        $command = new DailyReportCommand(
+            $config,
+            new StubNotionClient(
+                [$this->page('Today task', '2026-04-16', '未着手')],
+                [],
+                new RuntimeException('Notion write failed.')
+            ),
+            new PropertyExtractor($timezone),
+            new DateFilter($timezone),
+            new ReportBuilder($timezone),
+            new Logger($logPath, $timezone),
+            $timezone,
+            false,
+            null,
+            null,
+            new FailingMailNotifier()
+        );
+
+        ob_start();
+        $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
+        $output = (string) ob_get_clean();
+
+        self::assertSame(0, $exitCode);
+        self::assertSame('', $output);
+
+        $log = (string) file_get_contents($logPath);
+        self::assertStringContainsString('notion_report_failed', $log);
+        self::assertStringContainsString('notion_report_failure_mail_failed', $log);
+        self::assertStringContainsString('mail_notification_failed', $log);
+        self::assertStringContainsString('"notion_report_status":"failed"', $log);
+        self::assertStringContainsString('"mail_status":"failed"', $log);
+    }
+
+    public function testNotionReportChunksLongUtf8TextWithoutBreakingJsonEncoding(): void
+    {
+        $timezone = new DateTimeZone('Asia/Saigon');
+        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $notion = new StubNotionClient([
+            $this->page('A' . str_repeat('あ', 700), '2026-04-16', '未着手'),
+        ]);
+        $config = $this->config();
+        $config['notion_report'] = [
+            'enabled' => true,
+            'data_source_id' => 'report-source-id',
+            'title_property' => 'Name',
+            'date_property' => 'Date',
+        ];
+
+        $command = new DailyReportCommand(
+            $config,
+            $notion,
+            new PropertyExtractor($timezone),
+            new DateFilter($timezone),
+            new ReportBuilder($timezone),
+            new Logger($logPath, $timezone),
+            $timezone,
+            false
+        );
+
+        ob_start();
+        $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
+        ob_end_clean();
+
+        self::assertSame(0, $exitCode);
+        self::assertCount(1, $notion->createdPages);
+
+        $encoded = json_encode($notion->createdPages[0]['children'], JSON_UNESCAPED_UNICODE);
+        self::assertIsString($encoded);
+        self::assertNotFalse($encoded);
+        self::assertSame(JSON_ERROR_NONE, json_last_error());
+        self::assertStringContainsString(str_repeat('あ', 10), $encoded);
     }
 
     public function testSkipsNotionReportWhenDisabled(): void
@@ -1503,6 +1600,8 @@ final class StubMailNotifier implements MailNotifierInterface
     public ?string $sentBody = null;
     public ?string $sentPlainBody = null;
     public bool $sentBodyIsHtml = false;
+    /** @var array<int, array{subject: string, body: string, plain_body: ?string, body_is_html: bool}> */
+    public array $sentMessages = [];
 
     public function isConfigured(): bool
     {
@@ -1515,6 +1614,12 @@ final class StubMailNotifier implements MailNotifierInterface
         $this->sentBody = $body;
         $this->sentPlainBody = $plainBody;
         $this->sentBodyIsHtml = $bodyIsHtml;
+        $this->sentMessages[] = [
+            'subject' => $subject,
+            'body' => $body,
+            'plain_body' => $plainBody,
+            'body_is_html' => $bodyIsHtml,
+        ];
     }
 }
 

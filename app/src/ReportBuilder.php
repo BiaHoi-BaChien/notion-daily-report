@@ -710,10 +710,7 @@ final class ReportBuilder
     private function notionText(string $text, ?string $href = null): array
     {
         $text = $text === '' ? ' ' : $text;
-        $chunks = str_split($text, 1800);
-        if ($chunks === []) {
-            $chunks = [' '];
-        }
+        $chunks = $this->utf8ByteChunks($text, 1800);
 
         return array_map(static function (string $chunk) use ($href): array {
             return [
@@ -724,6 +721,55 @@ final class ReportBuilder
                 ],
             ];
         }, $chunks);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function utf8ByteChunks(string $text, int $maxBytes): array
+    {
+        if ($text === '') {
+            return [' '];
+        }
+
+        if (function_exists('mb_strcut')) {
+            $chunks = [];
+            $offset = 0;
+            $length = strlen($text);
+            while ($offset < $length) {
+                $chunk = mb_strcut($text, $offset, $maxBytes, 'UTF-8');
+                if ($chunk === '') {
+                    break;
+                }
+
+                $chunks[] = $chunk;
+                $offset += strlen($chunk);
+            }
+
+            return $chunks === [] ? [' '] : $chunks;
+        }
+
+        $characters = preg_split('//u', $text, -1, PREG_SPLIT_NO_EMPTY);
+        if ($characters === false || $characters === []) {
+            return [$text];
+        }
+
+        $chunks = [];
+        $chunk = '';
+        foreach ($characters as $character) {
+            if ($chunk !== '' && strlen($chunk . $character) > $maxBytes) {
+                $chunks[] = $chunk;
+                $chunk = '';
+            }
+
+            $chunk .= $character;
+        }
+
+        if ($chunk !== '') {
+            $chunks[] = $chunk;
+        }
+
+        return $chunks === [] ? [' '] : $chunks;
     }
 
     private function escapeSlackText(string $text): string

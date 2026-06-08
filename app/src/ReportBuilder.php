@@ -159,7 +159,7 @@ final class ReportBuilder
         }
 
         $blocks[] = $this->notionHeading(2, '🔥 今日の予定');
-        $this->appendNotionTable($blocks, $this->todayTodoItems($items), true);
+        $this->appendNotionTimedTableWithUntimedRows($blocks, $this->todayTodoItems($items), true);
 
         $blocks[] = $this->notionHeading(2, '⏰ 明日の時間付き予定');
         $this->appendNotionTable($blocks, $this->tomorrowTimedTodoAndCalendarItems($items, $today), true);
@@ -500,6 +500,36 @@ final class ReportBuilder
         }
 
         $blocks[] = $this->notionTable($rows);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $blocks
+     * @param array<int, array<string, mixed>> $items
+     */
+    private function appendNotionTimedTableWithUntimedRows(array &$blocks, array $items, bool $includeGroup): void
+    {
+        if ($items === []) {
+            $blocks[] = $this->notionBullet($this->notionText('該当なし'));
+            return;
+        }
+
+        $tableRows = [];
+        $untimedItems = [];
+        foreach ($this->sortNotionTableRows($items) as $item) {
+            if (($item['date_has_time'] ?? false) === true) {
+                $tableRows[] = $this->notionItemTableRow($item, $includeGroup);
+            } else {
+                $untimedItems[] = $item;
+            }
+        }
+
+        if ($tableRows !== []) {
+            $blocks[] = $this->notionTable($tableRows);
+        }
+
+        foreach ($untimedItems as $item) {
+            $blocks[] = $this->notionBullet($this->notionTitleText($item));
+        }
     }
 
     /**

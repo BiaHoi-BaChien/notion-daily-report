@@ -404,6 +404,7 @@ final class DailyReportCommandTest extends TestCase
 
         $linked = $this->extractedItem('確認 & <連絡>', '2026-04-22', 'ToDo', '今日やるべき作業の確認', '2026-04-22T09:00:00+07:00');
         $linked['url'] = 'https://notion.example/page?a=1&b=2';
+        $untimedToday = $this->extractedItem('今日の時間なし予定', '2026-04-22', 'ToDo', '今日やるべき作業の確認', '2026-04-22');
         $tomorrow = $this->extractedItem('明日の予定', '2026-04-23', 'ToDo', '今日やるべき作業の確認', '2026-04-23T18:00:00+07:00');
         $tomorrow['project'] = '翌日案件';
         $deadline = $this->extractedItem('期限タスク', '2026-04-22', '各案件のタスク', '各案件ごとのタスクの確認', '2026-04-22T18:00:00+07:00');
@@ -413,7 +414,7 @@ final class DailyReportCommandTest extends TestCase
         $upcoming['url'] = 'https://notion.example/upcoming';
         $untimedUpcoming = $this->extractedItem('時間なし予定', '2026-04-24', 'カレンダー', '今日以降1週間の予定の確認', '2026-04-24');
         $identity = $this->extractedItem('TECHCOMBANK(Debid Card)', '2026-06-01', '身分証明書', '期限切れが迫っている身分証明書の確認', '2026-06-01');
-        $items = $builder->classifyAndSort([$linked, $tomorrow, $deadline, $upcoming, $untimedUpcoming, $identity], $today);
+        $items = $builder->classifyAndSort([$linked, $untimedToday, $tomorrow, $deadline, $upcoming, $untimedUpcoming, $identity], $today);
 
         $blocks = $builder->renderNotionBlocks('今日のコメント', $items, $today);
         $types = array_column($blocks, 'type');
@@ -466,6 +467,7 @@ final class DailyReportCommandTest extends TestCase
         self::assertNotNull($linkedRow);
         self::assertSame('09:00', $linkedRow[0][0]['text']['content']);
         self::assertSame('https://notion.example/page?a=1&b=2', $linkedRow[1][0]['text']['link']['url']);
+        self::assertNull($findTableRow($tableRows, '今日の時間なし予定'));
 
         $tomorrowRow = $findTableRow($tableRows, '明日の予定');
         self::assertNotNull($tomorrowRow);
@@ -485,12 +487,19 @@ final class DailyReportCommandTest extends TestCase
         self::assertNull($findTableRow($tableRows, '時間なし予定'));
 
         $untimedBulletIndex = null;
+        $untimedTodayBulletIndex = null;
         $upcomingTableIndex = null;
         foreach ($blocks as $index => $block) {
             if (($block['type'] ?? null) === 'bulleted_list_item'
                 && (($block['bulleted_list_item']['rich_text'][0]['text']['content'] ?? null) === '時間なし予定')
             ) {
                 $untimedBulletIndex = $index;
+            }
+
+            if (($block['type'] ?? null) === 'bulleted_list_item'
+                && (($block['bulleted_list_item']['rich_text'][0]['text']['content'] ?? null) === '今日の時間なし予定')
+            ) {
+                $untimedTodayBulletIndex = $index;
             }
 
             if (($block['type'] ?? null) !== 'table') {
@@ -505,6 +514,7 @@ final class DailyReportCommandTest extends TestCase
             }
         }
         self::assertNotNull($untimedBulletIndex);
+        self::assertNotNull($untimedTodayBulletIndex);
         self::assertNotNull($upcomingTableIndex);
         self::assertLessThan($upcomingTableIndex, $untimedBulletIndex);
 

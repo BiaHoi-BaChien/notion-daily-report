@@ -117,12 +117,29 @@ php app/batch/daily_report.php --date=2026-04-16
 
 The report is sent to Slack and email when configured. The batch does not print the report body to stdout; operational logs are written to `app/logs/daily_report.log` by default.
 
+## Deployment
+
+Deployments are handled by `.github/workflows/deploy.yml`. On every push to `main`, or when the workflow is run manually, GitHub Actions uploads the application files to:
+
+```text
+/home/u685478147/public_html/public_html/notion_daily_report
+```
+
+Configure these GitHub Actions secrets before running the workflow:
+
+- `HOSTINGER_HOST`
+- `HOSTINGER_USERNAME`
+- `HOSTINGER_SSH_KEY`
+- `HOSTINGER_PORT` (optional; defaults to `22`)
+
+Keep the production `.env` on the Hostinger server. The deployment does not upload `.env`, and `app/logs` is created on the server for runtime logs. The deployed `.htaccess` denies web access to the deployment directory because this project is a CLI batch.
+
 ## Hostinger Cron Example
 
 Hostinger cron is UTC-based, so choose the UTC trigger time that corresponds to your intended local report time. Use absolute paths:
 
 ```bash
-/usr/bin/php /home/USER/domains/DOMAIN/private/notion-daily-report/app/batch/daily_report.php >> /home/USER/domains/DOMAIN/private/notion-daily-report/app/logs/cron.log 2>&1
+/usr/bin/php /home/u685478147/public_html/public_html/notion_daily_report/app/batch/daily_report.php >> /home/u685478147/public_html/public_html/notion_daily_report/app/logs/cron.log 2>&1
 ```
 
 Keep `.env` outside any public web root whenever possible.

@@ -127,10 +127,10 @@ Deployments are handled by `.github/workflows/deploy.yml`. On every push to `mai
 
 Configure these GitHub Actions secrets before running the workflow:
 
-- `HOSTINGER_HOST`
-- `HOSTINGER_USERNAME`
-- `HOSTINGER_SSH_KEY`
-- `HOSTINGER_PORT` (optional; defaults to `22`)
+- `SCP_HOST`
+- `SCP_USER`
+- `SCP_PRIVATE_KEY`
+- `SCP_PORT` (optional; defaults to `22`)
 
 Keep the production `.env` on the Hostinger server. The deployment does not upload `.env`, and `app/logs` is created on the server for runtime logs. The deployed `.htaccess` denies web access to the deployment directory because this project is a CLI batch.
 

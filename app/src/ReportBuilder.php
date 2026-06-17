@@ -523,12 +523,12 @@ final class ReportBuilder
             }
         }
 
-        if ($tableRows !== []) {
-            $blocks[] = $this->notionTable($tableRows);
-        }
-
         foreach ($untimedItems as $item) {
             $blocks[] = $this->notionBullet($this->notionTitleText($item));
+        }
+
+        if ($tableRows !== []) {
+            $blocks[] = $this->notionTable($tableRows);
         }
     }
 

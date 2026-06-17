@@ -488,6 +488,7 @@ final class DailyReportCommandTest extends TestCase
 
         $untimedBulletIndex = null;
         $untimedTodayBulletIndex = null;
+        $todayTableIndex = null;
         $upcomingTableIndex = null;
         foreach ($blocks as $index => $block) {
             if (($block['type'] ?? null) === 'bulleted_list_item'
@@ -507,6 +508,10 @@ final class DailyReportCommandTest extends TestCase
             }
 
             foreach ($block['table']['children'] as $child) {
+                if (($child['table_row']['cells'][1][0]['text']['content'] ?? null) === '確認 & <連絡>') {
+                    $todayTableIndex = $index;
+                }
+
                 if (($child['table_row']['cells'][1][0]['text']['content'] ?? null) === '来週の確認') {
                     $upcomingTableIndex = $index;
                     break 2;
@@ -515,7 +520,9 @@ final class DailyReportCommandTest extends TestCase
         }
         self::assertNotNull($untimedBulletIndex);
         self::assertNotNull($untimedTodayBulletIndex);
+        self::assertNotNull($todayTableIndex);
         self::assertNotNull($upcomingTableIndex);
+        self::assertLessThan($todayTableIndex, $untimedTodayBulletIndex);
         self::assertLessThan($upcomingTableIndex, $untimedBulletIndex);
 
         $identityCallouts = array_values(array_filter(

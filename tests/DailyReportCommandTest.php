@@ -24,7 +24,7 @@ final class DailyReportCommandTest extends TestCase
 {
     public function testRunsCliReportWithStubbedNotionClient(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $slack = new StubSlackNotifier();
 
@@ -61,7 +61,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testInvalidDateReturnsNonZeroExitCode(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
 
         $command = new DailyReportCommand(
@@ -84,7 +84,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testProcessesMultipleSourcesAndSendsSlackReport(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $slack = new StubSlackNotifier();
 
@@ -122,7 +122,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testContinuesWhenOneSourceFails(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $slack = new StubSlackNotifier();
 
@@ -163,7 +163,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testRendersStructuredPhpReportWithProjectsCalendarAndHoliday(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $slack = new StubSlackNotifier();
 
@@ -228,7 +228,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testRendersTodayChildLunchInOtherTopics(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $slack = new StubSlackNotifier();
 
@@ -269,7 +269,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testResolvesRelationProjectTitlesForGrouping(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $slack = new StubSlackNotifier();
 
@@ -311,7 +311,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testDeterminesSourceTypeOnlyFromSourceName(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $today = new DateTimeImmutable('2026-04-17', $timezone);
         $builder = new ReportBuilder($timezone);
 
@@ -336,7 +336,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testRendersRelativeDateGroupLabelsForUpcomingAndOtherTopics(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $today = new DateTimeImmutable('2026-04-22', $timezone);
         $builder = new ReportBuilder($timezone);
 
@@ -373,7 +373,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testRendersNotionPageLinksForSlackAndHtmlMail(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $today = new DateTimeImmutable('2026-04-22', $timezone);
         $builder = new ReportBuilder($timezone);
 
@@ -398,7 +398,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testRendersReadableNotionBlocksWithoutDividers(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $today = new DateTimeImmutable('2026-04-22', $timezone);
         $builder = new ReportBuilder($timezone);
 
@@ -541,7 +541,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testRendersNotionEmptySectionsAsBulletedNoMatchMessage(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $today = new DateTimeImmutable('2026-04-22', $timezone);
         $builder = new ReportBuilder($timezone);
         $items = $builder->classifyAndSort([
@@ -572,7 +572,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testUsesOpenAISummaryForSlackAndMailWhenConfigured(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $slack = new StubSlackNotifier();
         $mail = new StubMailNotifier();
@@ -614,7 +614,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testSwitchesDisableOpenAISlackAndMail(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $slack = new StubSlackNotifier();
         $mail = new StubMailNotifier();
@@ -654,7 +654,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testCreatesNotionReportWhenConfigured(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $notion = new StubNotionClient([
             $this->page('Today task', '2026-04-16', '未着手'),
@@ -703,7 +703,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testContinuesWhenNotionReportCreationFails(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $mail = new StubMailNotifier();
         $config = $this->config();
@@ -759,7 +759,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testCompletesWhenNotionReportFailureMailFails(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $config = $this->config();
         $config['notion_report'] = [
@@ -804,7 +804,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testNotionReportChunksLongUtf8TextWithoutBreakingJsonEncoding(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $notion = new StubNotionClient([
             $this->page('A' . str_repeat('あ', 700), '2026-04-16', '未着手'),
@@ -844,7 +844,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testSkipsNotionReportWhenDisabled(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $notion = new StubNotionClient([
             $this->page('Today task', '2026-04-16', '未着手'),
@@ -880,7 +880,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testContinuesMailDeliveryWhenSlackNotificationFails(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $mail = new StubMailNotifier();
 
@@ -918,7 +918,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testCompletesWhenMailNotificationFails(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
 
         $command = new DailyReportCommand(
@@ -952,7 +952,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testLogsOperationalSummaryForSuccessfulRun(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
 
         $command = new DailyReportCommand(
@@ -985,7 +985,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testPassesProjectToOpenAISummary(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $openai = new StubOpenAIClient('1. 今日の概要' . PHP_EOL . '- 決済システムの確認があります。');
         $config = $this->config();
@@ -1016,7 +1016,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testPassesCalendarGenreToOpenAISummary(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $slack = new StubSlackNotifier();
         $mail = new StubMailNotifier();
@@ -1058,7 +1058,7 @@ final class DailyReportCommandTest extends TestCase
 
     public function testFallsBackToLocalReportWhenOpenAISummaryFails(): void
     {
-        $timezone = new DateTimeZone('Asia/Saigon');
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $slack = new StubSlackNotifier();
 

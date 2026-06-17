@@ -15,7 +15,7 @@ final class DateFilterTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->timezone = new DateTimeZone('Asia/Saigon');
+        $this->timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
     }
 
     public function testFiltersByDateWindowAndExcludedStatuses(): void

@@ -98,7 +98,7 @@ $baseSources = [
 $sources = \App\SourceConfigBuilder::buildSources($dataSourceIds, $baseSources);
 
 return [
-    'timezone' => $env('APP_TIMEZONE', 'Asia/Saigon'),
+    'timezone' => $env('APP_TIMEZONE', 'Asia/Ho_Chi_Minh'),
     'log_path' => $env('LOG_PATH', 'app/logs/daily_report.log'),
     'http' => [
         'ca_bundle' => $env('HTTP_CA_BUNDLE', $env('SSL_CERT_FILE', $env('CURL_CA_BUNDLE', ''))),

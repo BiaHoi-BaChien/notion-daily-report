@@ -15,7 +15,7 @@ final class PropertyExtractorTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->extractor = new PropertyExtractor(new DateTimeZone('Asia/Saigon'));
+        $this->extractor = new PropertyExtractor(new DateTimeZone('Asia/Ho_Chi_Minh'));
     }
 
     public function testExtractsTitleDateStatusAndPageMetadata(): void

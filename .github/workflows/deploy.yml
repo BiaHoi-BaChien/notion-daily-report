@@ -26,6 +26,7 @@ jobs:
           username: ${{ secrets.SCP_USER }}
           key: ${{ secrets.SCP_PRIVATE_KEY }}
           port: ${{ secrets.SCP_PORT || '22' }}
+          timeout: 120s
           source: ".htaccess,app/**,composer.json,composer.lock,README.md,LICENSE"
           target: "/home/u685478147/public_html/public_html/notion_daily_report"
           overwrite: true
@@ -37,6 +38,7 @@ jobs:
           username: ${{ secrets.SCP_USER }}
           key: ${{ secrets.SCP_PRIVATE_KEY }}
           port: ${{ secrets.SCP_PORT || '22' }}
+          timeout: 120s
           script: |
             cd /home/u685478147/public_html/public_html/notion_daily_report
             mkdir -p app/logs

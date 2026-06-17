@@ -19,7 +19,7 @@ cp .env.example .env
 Edit `.env`:
 
 ```dotenv
-APP_TIMEZONE=Asia/Saigon
+APP_TIMEZONE=Asia/Ho_Chi_Minh
 HTTP_CA_BUNDLE=
 NOTION_API_KEY=secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 NOTION_VERSION=2026-03-11

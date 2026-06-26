@@ -206,7 +206,7 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringContainsString('🔥 今日の予定', $report);
         self::assertStringContainsString('時間｜予定｜分類', $report);
         self::assertStringContainsString('09:30｜<https://notion.example/%E6%B1%BA%E6%B8%88%E7%A2%BA%E8%AA%8D|決済確認>｜決済システム', $report);
-        self::assertStringContainsString('⚠ 本日期限', $report);
+        self::assertStringContainsString('⚠ 本日期限のタスク', $report);
         self::assertStringContainsString('決済追加確認>｜決済システム', $report);
         self::assertStringContainsString('楽天ペイV2', $report);
         self::assertStringContainsString('楽天ペイ表示確認>｜楽天ペイV2', $report);
@@ -304,7 +304,7 @@ final class DailyReportCommandTest extends TestCase
 
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
-        self::assertStringContainsString('⚠ 本日期限', $report);
+        self::assertStringContainsString('⚠ 本日期限のタスク', $report);
         self::assertStringContainsString('楽天ペイ表示確認>｜楽天ペイV2', $report);
         self::assertStringNotContainsString('楽天ペイ表示確認｜その他', $report);
     }
@@ -556,7 +556,7 @@ final class DailyReportCommandTest extends TestCase
             return null;
         };
 
-        foreach (['⏰ 明日の時間付き予定', '⚠️ 本日期限', '📌 近日確認'] as $heading) {
+        foreach (['⏰ 明日の時間付き予定', '⚠️ 本日期限のタスク', '📌 近日確認'] as $heading) {
             $block = $nextBlockAfterHeading($blocks, $heading);
             self::assertSame('bulleted_list_item', $block['type'] ?? null);
             self::assertSame('該当なし', $block['bulleted_list_item']['rich_text'][0]['text']['content'] ?? null);

@@ -86,7 +86,7 @@ final class ReportBuilder
         );
         $lines[] = '';
 
-        $this->appendSectionHeader($lines, '⚠ 本日期限');
+        $this->appendSectionHeader($lines, '⚠ 本日期限のタスク');
         $this->appendRows(
             $lines,
             $this->todayProjectTaskItems($items),
@@ -164,7 +164,7 @@ final class ReportBuilder
         $blocks[] = $this->notionHeading(2, '⏰ 明日の時間付き予定');
         $this->appendNotionTable($blocks, $this->tomorrowTimedTodoAndCalendarItems($items, $today), true);
 
-        $blocks[] = $this->notionHeading(2, '⚠️ 本日期限');
+        $blocks[] = $this->notionHeading(2, '⚠️ 本日期限のタスク');
         $this->appendNotionTable($blocks, $this->todayProjectTaskItems($items), true);
 
         $blocks[] = $this->notionHeading(2, '📌 近日確認');

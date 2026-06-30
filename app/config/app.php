@@ -28,7 +28,6 @@ $dataSourceIds = \App\SourceConfigBuilder::dataSourceIds(
 
 $baseSources = [
     [
-        'enabled' => true,
         'name' => 'ToDo',
         'role' => '今日やるべき作業の確認',
         'date_property' => 'いつまでに',
@@ -37,10 +36,8 @@ $baseSources = [
         'lookback_days' => 0,
         'lookahead_days' => 3,
         'exclude_statuses' => ['完了', 'いつかやる'],
-        'filter_property_ids' => [],
     ],
     [
-        'enabled' => true,
         'name' => '各案件のタスク',
         'role' => '各案件ごとのタスクの確認',
         'date_property' => 'By when',
@@ -49,10 +46,8 @@ $baseSources = [
         'lookback_days' => 0,
         'lookahead_days' => 5,
         'exclude_statuses' => ['Release', 'Archived'],
-        'filter_property_ids' => [],
     ],
     [
-        'enabled' => true,
         'name' => 'カレンダー',
         'role' => '今日以降1週間の予定の確認',
         'date_property' => 'Date',
@@ -62,10 +57,8 @@ $baseSources = [
         'lookback_days' => 0,
         'lookahead_days' => 7,
         'exclude_statuses' => [],
-        'filter_property_ids' => [],
     ],
     [
-        'enabled' => true,
         'name' => '身分証明書',
         'role' => '期限切れが迫っている身分証明書の確認',
         'date_property' => '有効期限',
@@ -74,10 +67,8 @@ $baseSources = [
         'lookback_days' => 0,
         'lookahead_days' => 60,
         'exclude_statuses' => ['無効'],
-        'filter_property_ids' => [],
     ],
     [
-        'enabled' => true,
         'name' => '子供のお弁当',
         'role' => '今日の子供のお弁当の献立確認',
         'date_property' => '日付',
@@ -86,7 +77,6 @@ $baseSources = [
         'lookback_days' => 0,
         'lookahead_days' => 0,
         'exclude_statuses' => [],
-        'filter_property_ids' => [],
         'extra_properties' => [
             'weekday' => '曜日',
             'size' => 'サイズ',

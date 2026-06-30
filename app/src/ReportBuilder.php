@@ -470,23 +470,6 @@ final class ReportBuilder
      * @param array<int, array<string, mixed>> $blocks
      * @param array<int, array<string, mixed>> $items
      */
-    private function appendNotionRows(array &$blocks, array $items, bool $includeDate, bool $includeGroup, bool $callout): void
-    {
-        if ($items === []) {
-            $blocks[] = $this->notionCallout('✅', $this->notionText('該当なし'));
-            return;
-        }
-
-        foreach ($this->sortRows($items, $includeDate) as $item) {
-            $richText = $this->notionRowText($item, $includeDate, $includeGroup);
-            $blocks[] = $callout ? $this->notionCallout(null, $richText) : $this->notionBullet($richText);
-        }
-    }
-
-    /**
-     * @param array<int, array<string, mixed>> $blocks
-     * @param array<int, array<string, mixed>> $items
-     */
     private function appendNotionTable(array &$blocks, array $items, bool $includeGroup): void
     {
         if ($items === []) {
@@ -613,39 +596,6 @@ final class ReportBuilder
         }
 
         return $cells;
-    }
-
-    /**
-     * @param array<string, mixed> $item
-     * @return array<int, array<string, mixed>>
-     */
-    private function notionRowText(array $item, bool $includeDate, bool $includeGroup): array
-    {
-        $richText = [];
-        $hasPreviousPart = false;
-        $dateText = $this->dateText($item, $includeDate);
-        if ($dateText !== '' && $dateText !== '終日') {
-            $richText = array_merge($richText, $this->notionText($dateText));
-            $hasPreviousPart = true;
-        }
-
-        if ($hasPreviousPart) {
-            $richText = array_merge($richText, $this->notionText('｜'));
-        }
-        $richText = array_merge($richText, $this->notionTitleText($item));
-        $hasPreviousPart = true;
-
-        if ($includeGroup) {
-            $group = $this->displayGroupName($item);
-            if ($group !== null) {
-                if ($hasPreviousPart) {
-                    $richText = array_merge($richText, $this->notionText('｜'));
-                }
-                $richText = array_merge($richText, $this->notionText($group));
-            }
-        }
-
-        return $richText;
     }
 
     /**

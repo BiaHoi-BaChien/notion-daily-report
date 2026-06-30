@@ -91,14 +91,7 @@ HTML;
      */
     public static function parseRecipients(string $value): array
     {
-        if (trim($value) === '') {
-            return [];
-        }
-
-        return array_values(array_filter(
-            array_map('trim', explode(',', $value)),
-            static fn (string $recipient): bool => $recipient !== ''
-        ));
+        return SourceConfigBuilder::splitCsv($value);
     }
 
     private function smtpSecure(): string

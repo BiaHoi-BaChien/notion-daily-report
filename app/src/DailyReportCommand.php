@@ -438,20 +438,16 @@ final class DailyReportCommand
 
     private function sendSlackReport(string $report, string $runId): string
     {
-        if (!$this->isFeatureEnabled('slack')) {
-            $this->logger->info('slack_notification_skipped', [
-                'run_id' => $runId,
-                'reason' => 'Slack notification is disabled.',
-            ]);
-            return 'disabled';
-        }
-
-        if ($this->slackNotifier === null || !$this->slackNotifier->isConfigured()) {
-            $this->logger->info('slack_notification_skipped', [
-                'run_id' => $runId,
-                'reason' => 'SLACK_WEBHOOK_URL is not configured.',
-            ]);
-            return 'not_configured';
+        $skipStatus = $this->notificationSkipStatus(
+            'slack',
+            $this->slackNotifier,
+            'slack_notification_skipped',
+            'Slack notification is disabled.',
+            'SLACK_WEBHOOK_URL is not configured.',
+            $runId
+        );
+        if ($skipStatus !== null) {
+            return $skipStatus;
         }
 
         try {
@@ -701,20 +697,16 @@ final class DailyReportCommand
 
     private function sendMailReport(string $htmlReport, string $plainReport, DateTimeImmutable $today, string $runId): string
     {
-        if (!$this->isFeatureEnabled('mail')) {
-            $this->logger->info('mail_notification_skipped', [
-                'run_id' => $runId,
-                'reason' => 'Mail notification is disabled.',
-            ]);
-            return 'disabled';
-        }
-
-        if ($this->mailNotifier === null || !$this->mailNotifier->isConfigured()) {
-            $this->logger->info('mail_notification_skipped', [
-                'run_id' => $runId,
-                'reason' => 'SMTP_HOST, MAIL_FROM, or MAIL_TO is not configured.',
-            ]);
-            return 'not_configured';
+        $skipStatus = $this->notificationSkipStatus(
+            'mail',
+            $this->mailNotifier,
+            'mail_notification_skipped',
+            'Mail notification is disabled.',
+            'SMTP_HOST, MAIL_FROM, or MAIL_TO is not configured.',
+            $runId
+        );
+        if ($skipStatus !== null) {
+            return $skipStatus;
         }
 
         $subject = sprintf('Notion Daily Report %s', $today->setTimezone($this->timezone)->format('Y-m-d'));
@@ -735,6 +727,33 @@ final class DailyReportCommand
             'report_size_bytes' => strlen($plainReport),
         ]);
         return 'sent';
+    }
+
+    private function notificationSkipStatus(
+        string $feature,
+        mixed $notifier,
+        string $logMessage,
+        string $disabledReason,
+        string $notConfiguredReason,
+        string $runId
+    ): ?string {
+        if (!$this->isFeatureEnabled($feature)) {
+            $this->logger->info($logMessage, [
+                'run_id' => $runId,
+                'reason' => $disabledReason,
+            ]);
+            return 'disabled';
+        }
+
+        if ($notifier === null || !$notifier->isConfigured()) {
+            $this->logger->info($logMessage, [
+                'run_id' => $runId,
+                'reason' => $notConfiguredReason,
+            ]);
+            return 'not_configured';
+        }
+
+        return null;
     }
 
     private function isFeatureEnabled(string $key): bool

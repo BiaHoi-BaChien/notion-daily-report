@@ -86,6 +86,25 @@ $baseSources = [
 ];
 
 $sources = \App\SourceConfigBuilder::buildSources($dataSourceIds, $baseSources);
+$birthdayDataSourceId = trim((string) $env(
+    'BIRTHDAY_NOTION_DATA_SOURCE_ID',
+    'b050caed-409d-4085-93fa-25d6f0e24728'
+));
+if ($birthdayDataSourceId !== '') {
+    $sources[] = [
+        'name' => '誕生日',
+        'role' => '今日から明後日までに誕生日を迎える在職者の確認',
+        'data_source_id' => $birthdayDataSourceId,
+        'date_property' => 'Birthday',
+        'status_property' => 'Status',
+        'title_property' => 'Full Name',
+        'lookback_days' => 0,
+        'lookahead_days' => 2,
+        'exclude_statuses' => [],
+        'include_statuses' => ['在職中'],
+        'annual' => true,
+    ];
+}
 
 return [
     'timezone' => $env('APP_TIMEZONE', 'Asia/Ho_Chi_Minh'),

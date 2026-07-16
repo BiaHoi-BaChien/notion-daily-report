@@ -44,6 +44,31 @@ final class DateFilterTest extends TestCase
         self::assertSame(['overdue', 'today', 'upcoming', 'recent_past'], array_column($filtered, 'title'));
     }
 
+    public function testFiltersAnnualBirthdaysAndCalculatesNewAge(): void
+    {
+        $filter = new DateFilter($this->timezone);
+        $source = [
+            'lookback_days' => 0,
+            'lookahead_days' => 2,
+            'exclude_statuses' => [],
+            'include_statuses' => ['在職中'],
+            'annual' => true,
+        ];
+        $items = [
+            $this->item('today', '1990-12-31', '在職中'),
+            $this->item('tomorrow', '1995-01-01', '在職中'),
+            $this->item('later', '1995-01-03', '在職中'),
+            $this->item('left', '1990-12-31', '離脱'),
+        ];
+
+        $filtered = $filter->filter($items, $source, new DateTimeImmutable('2026-12-31', $this->timezone));
+
+        self::assertSame(['today', 'tomorrow'], array_column($filtered, 'title'));
+        self::assertSame(['2026-12-31', '2027-01-01'], array_column($filtered, 'date'));
+        self::assertSame('36', $filtered[0]['extra']['age']);
+        self::assertSame('32', $filtered[1]['extra']['age']);
+    }
+
     /**
      * @return array<string, mixed>
      */

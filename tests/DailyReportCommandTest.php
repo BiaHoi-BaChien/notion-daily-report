@@ -353,6 +353,10 @@ final class DailyReportCommandTest extends TestCase
         $report = $builder->renderSchedule($items, $today);
 
         self::assertStringContainsString('⏰ 明日の時間付き予定', $report);
+        self::assertLessThan(
+            strpos($report, '⏰ 明日の時間付き予定'),
+            strpos($report, '⚠ 本日期限のタスク')
+        );
         self::assertStringContainsString('時間｜予定｜分類', $report);
         self::assertStringContainsString('18:00｜楽天ペイ未契約店舗の表示確認｜', $report);
         self::assertStringNotContainsString('楽天ペイ未契約店舗の表示確認｜その他', $report);
@@ -369,6 +373,21 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringContainsString('06/01（月） あと40日', $report);
         self::assertStringContainsString('・TECHCOMBANK(Debid Card)', $report);
         self::assertStringNotContainsString('TECHCOMBANK(Debid Card)｜身分証明書', $report);
+    }
+
+    public function testRendersUpcomingBirthdayOnlyInOtherTopics(): void
+    {
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $today = new DateTimeImmutable('2026-07-16', $timezone);
+        $builder = new ReportBuilder($timezone);
+        $birthday = $this->extractedItem('Nguyen Van A', '2026-07-17', '誕生日', '誕生日確認', '2026-07-17');
+        $birthday['extra'] = ['birthdate' => '1990-07-17', 'age' => '36'];
+
+        $report = $builder->renderSchedule($builder->classifyAndSort([$birthday], $today), $today);
+
+        self::assertStringContainsString('💡 その他トピックス', $report);
+        self::assertStringContainsString("もうすぐ誕生日\n・Nguyen Van A｜1990年07月17日｜36歳", $report);
+        self::assertSame(1, substr_count($report, 'Nguyen Van A'));
     }
 
     public function testRendersNotionPageLinksForSlackAndHtmlMail(): void

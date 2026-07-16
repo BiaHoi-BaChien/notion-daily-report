@@ -18,6 +18,7 @@ final class ReportBuilder
     private const SOURCE_CALENDAR = 'カレンダー';
     private const SOURCE_IDENTITY_DOCUMENT = '身分証明書';
     private const SOURCE_CHILD_LUNCH = '子供のお弁当';
+    private const SOURCE_BIRTHDAY = '誕生日';
     private const GROUP_OTHER = 'その他';
     private const GROUP_SCHOOL = '学校';
     private const GROUP_LIFE = '生活';
@@ -76,20 +77,20 @@ final class ReportBuilder
         );
         $lines[] = '';
 
-        $this->appendSectionHeader($lines, '⏰ 明日の時間付き予定');
-        $this->appendRowsTable(
+        $this->appendSectionHeader($lines, '⚠ 本日期限のタスク');
+        $this->appendRows(
             $lines,
-            $this->tomorrowTimedTodoAndCalendarItems($items, $today),
+            $this->todayProjectTaskItems($items),
             false,
             true,
             $format
         );
         $lines[] = '';
 
-        $this->appendSectionHeader($lines, '⚠ 本日期限のタスク');
-        $this->appendRows(
+        $this->appendSectionHeader($lines, '⏰ 明日の時間付き予定');
+        $this->appendRowsTable(
             $lines,
-            $this->todayProjectTaskItems($items),
+            $this->tomorrowTimedTodoAndCalendarItems($items, $today),
             false,
             true,
             $format
@@ -108,7 +109,8 @@ final class ReportBuilder
 
         $childLunches = $this->childLunchItems($items);
         $identityDocuments = $this->identityDocumentItems($items);
-        if ($childLunches !== [] || $identityDocuments !== []) {
+        $birthdays = $this->birthdayItems($items);
+        if ($childLunches !== [] || $identityDocuments !== [] || $birthdays !== []) {
             $lines[] = '';
             $this->appendSectionHeader($lines, '💡 その他トピックス');
 
@@ -128,6 +130,16 @@ final class ReportBuilder
 
                 $lines[] = '以下の身分証明書の有効期限が近づいています。';
                 $this->appendIdentityDocumentRows($lines, $identityDocuments, $today, $format);
+            }
+
+            if ($birthdays !== []) {
+                if ($childLunches !== [] || $identityDocuments !== []) {
+                    $lines[] = '';
+                }
+                $lines[] = 'もうすぐ誕生日';
+                foreach ($this->sortRows($birthdays, true) as $birthday) {
+                    $lines[] = $this->birthdayText($birthday, $format);
+                }
             }
         }
 
@@ -161,18 +173,19 @@ final class ReportBuilder
         $blocks[] = $this->notionHeading(2, '🔥 今日の予定');
         $this->appendNotionTimedTableWithUntimedRows($blocks, $this->todayTodoItems($items), true);
 
-        $blocks[] = $this->notionHeading(2, '⏰ 明日の時間付き予定');
-        $this->appendNotionTable($blocks, $this->tomorrowTimedTodoAndCalendarItems($items, $today), true);
-
         $blocks[] = $this->notionHeading(2, '⚠️ 本日期限のタスク');
         $this->appendNotionTable($blocks, $this->todayProjectTaskItems($items), true);
+
+        $blocks[] = $this->notionHeading(2, '⏰ 明日の時間付き予定');
+        $this->appendNotionTable($blocks, $this->tomorrowTimedTodoAndCalendarItems($items, $today), true);
 
         $blocks[] = $this->notionHeading(2, '📌 近日確認');
         $this->appendNotionGroupedRows($blocks, $this->upcomingItems($items, $today), $today, true, true);
 
         $childLunches = $this->childLunchItems($items);
         $identityDocuments = $this->identityDocumentItems($items);
-        if ($childLunches !== [] || $identityDocuments !== []) {
+        $birthdays = $this->birthdayItems($items);
+        if ($childLunches !== [] || $identityDocuments !== [] || $birthdays !== []) {
             $blocks[] = $this->notionHeading(2, '💡 その他トピックス');
 
             foreach ($this->sortRows($childLunches, true) as $childLunch) {
@@ -204,6 +217,14 @@ final class ReportBuilder
                     $this->notionText('以下の身分証明書の有効期限が近づいています。'),
                     $identityChildren
                 );
+            }
+
+            if ($birthdays !== []) {
+                $birthdayChildren = [];
+                foreach ($this->sortRows($birthdays, true) as $birthday) {
+                    $birthdayChildren[] = $this->notionBullet($this->notionText(ltrim($this->birthdayText($birthday), '・')));
+                }
+                $blocks[] = $this->notionCallout('🎂', $this->notionText('もうすぐ誕生日'), $birthdayChildren);
             }
         }
 
@@ -280,6 +301,7 @@ final class ReportBuilder
             fn (array $item): bool => ($item['classification'] ?? null) === 'upcoming'
                 && !$this->isIdentityDocument($item)
                 && !$this->isChildLunch($item)
+                && !$this->isBirthday($item)
                 && !$this->isTomorrowTimedTodoOrCalendar($item, $tomorrow)
         ));
     }
@@ -331,6 +353,22 @@ final class ReportBuilder
             $items,
             fn (array $item): bool => $this->isIdentityDocument($item)
         ));
+    }
+
+    /** @param array<int, array<string, mixed>> $items */
+    private function birthdayItems(array $items): array
+    {
+        return array_values(array_filter($items, fn (array $item): bool => $this->isBirthday($item)));
+    }
+
+    /** @param array<string, mixed> $item */
+    private function birthdayText(array $item, string $format = self::FORMAT_TEXT): string
+    {
+        $birthdate = DateTimeImmutable::createFromFormat('!Y-m-d', (string) ($item['extra']['birthdate'] ?? ''), $this->timezone);
+        $date = $birthdate ? $birthdate->format('Y年m月d日') : '生年月日不明';
+        $age = trim((string) ($item['extra']['age'] ?? ''));
+
+        return sprintf('・%s｜%s｜%s', $this->formatText((string) ($item['title'] ?? '無題'), $format), $date, $age === '' ? '年齢不明' : $age . '歳');
     }
 
     /**
@@ -1159,6 +1197,12 @@ final class ReportBuilder
     private function isChildLunch(array $item): bool
     {
         return ($item['source_name'] ?? null) === self::SOURCE_CHILD_LUNCH;
+    }
+
+    /** @param array<string, mixed> $item */
+    private function isBirthday(array $item): bool
+    {
+        return ($item['source_name'] ?? null) === self::SOURCE_BIRTHDAY;
     }
 
     /**

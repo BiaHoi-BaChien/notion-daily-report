@@ -23,16 +23,25 @@ final class DateFilter
         $lookbackDays = max(0, (int) ($source['lookback_days'] ?? 0));
         $lookaheadDays = max(0, (int) ($source['lookahead_days'] ?? 0));
         $excludeStatuses = array_map('strval', $source['exclude_statuses'] ?? []);
+        $includeStatuses = array_map('strval', $source['include_statuses'] ?? []);
 
         $start = $today->setTimezone($this->timezone)->modify(sprintf('-%d days', $lookbackDays));
         $end = $today->setTimezone($this->timezone)->modify(sprintf('+%d days', $lookaheadDays));
 
-        return array_values(array_filter($items, function (array $item) use ($start, $end, $excludeStatuses): bool {
+        if (($source['annual'] ?? false) === true) {
+            return $this->filterAnnual($items, $start, $end, $excludeStatuses, $includeStatuses);
+        }
+
+        return array_values(array_filter($items, function (array $item) use ($start, $end, $excludeStatuses, $includeStatuses): bool {
             if (($item['date'] ?? null) === null || $item['date'] === '') {
                 return false;
             }
 
             if ($this->isExcludedStatus($item['status'] ?? null, $excludeStatuses)) {
+                return false;
+            }
+
+            if ($includeStatuses !== [] && !in_array((string) ($item['status'] ?? ''), $includeStatuses, true)) {
                 return false;
             }
 
@@ -43,6 +52,49 @@ final class DateFilter
 
             return $itemDate >= $start && $itemDate <= $end;
         }));
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @param array<int, string> $excludeStatuses
+     * @param array<int, string> $includeStatuses
+     * @return array<int, array<string, mixed>>
+     */
+    private function filterAnnual(
+        array $items,
+        DateTimeImmutable $start,
+        DateTimeImmutable $end,
+        array $excludeStatuses,
+        array $includeStatuses
+    ): array {
+        $matches = [];
+        foreach ($items as $item) {
+            if ($this->isExcludedStatus($item['status'] ?? null, $excludeStatuses)
+                || ($includeStatuses !== [] && !in_array((string) ($item['status'] ?? ''), $includeStatuses, true))
+            ) {
+                continue;
+            }
+
+            $birthdate = DateTimeImmutable::createFromFormat('!Y-m-d', (string) ($item['date'] ?? ''), $this->timezone);
+            if (!$birthdate) {
+                continue;
+            }
+
+            for ($date = $start; $date <= $end; $date = $date->modify('+1 day')) {
+                if ($date->format('m-d') !== $birthdate->format('m-d')) {
+                    continue;
+                }
+
+                $item['date'] = $date->format('Y-m-d');
+                $item['date_start'] = $item['date'];
+                $item['extra']['birthdate'] = $birthdate->format('Y-m-d');
+                $item['extra']['age'] = (string) ((int) $date->format('Y') - (int) $birthdate->format('Y'));
+                $matches[] = $item;
+                break;
+            }
+        }
+
+        return $matches;
     }
 
     /**

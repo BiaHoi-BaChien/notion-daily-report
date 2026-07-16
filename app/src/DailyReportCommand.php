@@ -287,6 +287,10 @@ final class DailyReportCommand
      */
     private function notionDateFilter(array $source, DateTimeImmutable $today): array
     {
+        if (($source['annual'] ?? false) === true) {
+            return [];
+        }
+
         $dateProperty = trim((string) ($source['date_property'] ?? ''));
         if ($dateProperty === '') {
             return [];

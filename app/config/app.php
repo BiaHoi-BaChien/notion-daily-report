@@ -21,14 +21,10 @@ $envBool = static function (string $key, bool $default = true) use ($env): bool 
     return $parsed ?? $default;
 };
 
-$dataSourceIds = \App\SourceConfigBuilder::dataSourceIds(
-    $env('NOTION_DATA_SOURCE_IDS', ''),
-    $env('NOTION_DATA_SOURCE_ID', '')
-);
-
 $baseSources = [
     [
         'name' => 'ToDo',
+        'data_source_id' => trim((string) $env('NOTION_TODO_DATA_SOURCE_ID', '')),
         'role' => '今日やるべき作業の確認',
         'date_property' => 'いつまでに',
         'status_property' => 'ステータス',
@@ -39,6 +35,7 @@ $baseSources = [
     ],
     [
         'name' => '各案件のタスク',
+        'data_source_id' => trim((string) $env('NOTION_PROJECT_TASK_DATA_SOURCE_ID', '')),
         'role' => '各案件ごとのタスクの確認',
         'date_property' => 'By when',
         'status_property' => 'Status',
@@ -49,6 +46,7 @@ $baseSources = [
     ],
     [
         'name' => 'カレンダー',
+        'data_source_id' => trim((string) $env('NOTION_CALENDAR_DATA_SOURCE_ID', '')),
         'role' => '今日以降1週間の予定の確認',
         'date_property' => 'Date',
         'status_property' => '',
@@ -60,6 +58,7 @@ $baseSources = [
     ],
     [
         'name' => '身分証明書',
+        'data_source_id' => trim((string) $env('NOTION_ID_DOCUMENT_DATA_SOURCE_ID', '')),
         'role' => '期限切れが迫っている身分証明書の確認',
         'date_property' => '有効期限',
         'status_property' => '状態',
@@ -70,6 +69,7 @@ $baseSources = [
     ],
     [
         'name' => '子供のお弁当',
+        'data_source_id' => trim((string) $env('NOTION_CHILD_LUNCH_DATA_SOURCE_ID', '')),
         'role' => '今日の子供のお弁当の献立確認',
         'date_property' => '日付',
         'status_property' => '',
@@ -85,7 +85,10 @@ $baseSources = [
     ],
 ];
 
-$sources = \App\SourceConfigBuilder::buildSources($dataSourceIds, $baseSources);
+$sources = array_values(array_filter(
+    $baseSources,
+    static fn (array $source): bool => $source['data_source_id'] !== ''
+));
 $birthdayDataSourceId = trim((string) $env(
     'BIRTHDAY_NOTION_DATA_SOURCE_ID',
     'b050caed-409d-4085-93fa-25d6f0e24728'

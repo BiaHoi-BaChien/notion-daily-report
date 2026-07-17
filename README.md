@@ -23,8 +23,11 @@ APP_TIMEZONE=Asia/Ho_Chi_Minh
 HTTP_CA_BUNDLE=
 NOTION_API_KEY=secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 NOTION_VERSION=2026-03-11
-NOTION_DATA_SOURCE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-NOTION_DATA_SOURCE_IDS=
+NOTION_TODO_DATA_SOURCE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+NOTION_PROJECT_TASK_DATA_SOURCE_ID=
+NOTION_CALENDAR_DATA_SOURCE_ID=
+NOTION_ID_DOCUMENT_DATA_SOURCE_ID=
+NOTION_CHILD_LUNCH_DATA_SOURCE_ID=
 SLACK_ENABLED=true
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 OPENAI_ENABLED=true
@@ -45,38 +48,15 @@ On Windows PHP installations where HTTPS requests fail with `cURL error 60`, set
 
 For API versions `2025-09-03` and newer, Notion distinguishes between database IDs and data-source IDs. Prefer the data-source ID from Notion's "Copy data source ID" action. If you provide a database ID, this script can resolve it automatically only when that database has exactly one data source.
 
-Use `NOTION_DATA_SOURCE_IDS` when multiple data sources should be processed:
+Configure each data source independently. Leave an ID empty to skip that source:
 
 ```dotenv
-NOTION_DATA_SOURCE_IDS=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx,yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+NOTION_TODO_DATA_SOURCE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+NOTION_PROJECT_TASK_DATA_SOURCE_ID=yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+NOTION_CALENDAR_DATA_SOURCE_ID=
+NOTION_ID_DOCUMENT_DATA_SOURCE_ID=
+NOTION_CHILD_LUNCH_DATA_SOURCE_ID=
 ```
-
-When `NOTION_DATA_SOURCE_IDS` is set, it takes precedence over `NOTION_DATA_SOURCE_ID`. Each ID is matched by index to one entry in `$baseSources` inside `app/config/app.php`. Leave `NOTION_DATA_SOURCE_IDS` empty when you only need the single-source setting.
-
-Example mapping:
-
-```php
-$baseSources = [
-    [
-        'name' => 'ToDo',
-        'date_property' => 'いつまでに',
-        'status_property' => 'ステータス',
-        'lookback_days' => 1,
-        'lookahead_days' => 3,
-        'exclude_statuses' => ['完了', 'いつかやる'],
-    ],
-    [
-        'name' => '会議予定',
-        'date_property' => '開始日',
-        'status_property' => null,
-        'lookback_days' => 0,
-        'lookahead_days' => 7,
-        'exclude_statuses' => [],
-    ],
-];
-```
-
-With two IDs in `NOTION_DATA_SOURCE_IDS`, the first ID uses `ToDo` settings and the second ID uses `会議予定` settings. If you add a third ID, add a third `$baseSources` entry.
 
 Update `app/config/app.php` if your Notion property names differ from the defaults:
 

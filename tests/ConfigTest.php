@@ -9,48 +9,34 @@ use PHPUnit\Framework\TestCase;
 
 final class ConfigTest extends TestCase
 {
-    public function testMapsCommaSeparatedDataSourceIdsToBaseSourcesByIndex(): void
+    public function testEachDataSourceCanBeConfiguredIndependently(): void
     {
-        $sources = SourceConfigBuilder::buildSources(
-            ['source-a', 'source-b'],
-            [
-                [
-                    'name' => 'Alpha',
-                    'date_property' => 'Due',
-                    'status_property' => 'Status',
-                ],
-                [
-                    'name' => 'Beta',
-                    'date_property' => 'Start',
-                    'status_property' => null,
-                    'exclude_statuses' => ['Done'],
-                ],
-            ]
-        );
+        $keys = [
+            'NOTION_TODO_DATA_SOURCE_ID',
+            'NOTION_PROJECT_TASK_DATA_SOURCE_ID',
+            'NOTION_CALENDAR_DATA_SOURCE_ID',
+            'NOTION_ID_DOCUMENT_DATA_SOURCE_ID',
+            'NOTION_CHILD_LUNCH_DATA_SOURCE_ID',
+            'BIRTHDAY_NOTION_DATA_SOURCE_ID',
+        ];
+        $original = array_intersect_key($_ENV, array_flip($keys));
 
-        self::assertSame(['source-a', 'source-b'], array_column($sources, 'data_source_id'));
-        self::assertSame('Alpha', $sources[0]['name']);
-        self::assertSame('Beta', $sources[1]['name']);
-        self::assertSame('Due', $sources[0]['date_property']);
-        self::assertSame('Start', $sources[1]['date_property']);
-        self::assertNull($sources[1]['status_property']);
-        self::assertSame(['Done'], $sources[1]['exclude_statuses']);
-    }
+        try {
+            foreach ($keys as $key) {
+                $_ENV[$key] = '';
+            }
+            $_ENV['NOTION_CALENDAR_DATA_SOURCE_ID'] = 'calendar-source';
 
-    public function testFallsBackToSingleDataSourceId(): void
-    {
-        self::assertSame(
-            ['single-source'],
-            SourceConfigBuilder::dataSourceIds('', ' single-source ')
-        );
-    }
+            $config = require dirname(__DIR__) . '/app/config/app.php';
 
-    public function testMultiSourceSettingTakesPrecedenceOverSingleSourceSetting(): void
-    {
-        self::assertSame(
-            ['source-a', 'source-b'],
-            SourceConfigBuilder::dataSourceIds(' source-a, source-b,, ', 'single-source')
-        );
+            self::assertSame(['カレンダー'], array_column($config['sources'], 'name'));
+            self::assertSame(['calendar-source'], array_column($config['sources'], 'data_source_id'));
+        } finally {
+            foreach ($keys as $key) {
+                unset($_ENV[$key]);
+            }
+            $_ENV += $original;
+        }
     }
 
     public function testSplitsOpenAIModelCandidates(): void
@@ -58,20 +44,6 @@ final class ConfigTest extends TestCase
         self::assertSame(
             ['gpt-4o-mini', 'gpt-4.1-mini', 'gpt-4o'],
             SourceConfigBuilder::splitCsv(' gpt-4o-mini, gpt-4.1-mini,,gpt-4o ')
-        );
-    }
-
-    public function testTooManyDataSourceIdsRequiresMatchingBaseSource(): void
-    {
-        $this->expectException(\UnexpectedValueException::class);
-        $this->expectExceptionMessage('defines only 2 base sources');
-
-        SourceConfigBuilder::buildSources(
-            ['source-a', 'source-b', 'source-c'],
-            [
-                ['name' => 'Alpha'],
-                ['name' => 'Beta'],
-            ]
         );
     }
 }

@@ -28,6 +28,7 @@ NOTION_PROJECT_TASK_DATA_SOURCE_ID=
 NOTION_CALENDAR_DATA_SOURCE_ID=
 NOTION_ID_DOCUMENT_DATA_SOURCE_ID=
 NOTION_CHILD_LUNCH_DATA_SOURCE_ID=
+BIRTHDAY_NOTION_DATA_SOURCE_ID=
 SLACK_ENABLED=true
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
 OPENAI_ENABLED=true
@@ -56,7 +57,47 @@ NOTION_PROJECT_TASK_DATA_SOURCE_ID=yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
 NOTION_CALENDAR_DATA_SOURCE_ID=
 NOTION_ID_DOCUMENT_DATA_SOURCE_ID=
 NOTION_CHILD_LUNCH_DATA_SOURCE_ID=
+BIRTHDAY_NOTION_DATA_SOURCE_ID=
 ```
+
+### Data source requirements
+
+Property names are case-sensitive. The names below are the defaults in `app/config/app.php`; change that file if your Notion data source uses different names. Every data source also needs a title property so report items have a name.
+
+| Environment variable | Purpose | Report window | Status filtering |
+|---|---|---|---|
+| `NOTION_TODO_DATA_SOURCE_ID` | Check work that should be done today | Today through 3 days ahead | Excludes `完了` and `いつかやる` |
+| `NOTION_PROJECT_TASK_DATA_SOURCE_ID` | Check tasks grouped by project | Today through 5 days ahead | Excludes `Release` and `Archived` |
+| `NOTION_CALENDAR_DATA_SOURCE_ID` | Check the upcoming schedule | Today through 7 days ahead | None |
+| `NOTION_ID_DOCUMENT_DATA_SOURCE_ID` | Check identification documents nearing expiry | Today through 60 days ahead | Excludes `無効` |
+| `NOTION_CHILD_LUNCH_DATA_SOURCE_ID` | Check today's child lunch menu | Today only | None |
+| `BIRTHDAY_NOTION_DATA_SOURCE_ID` | Check active employees with birthdays today through 2 days ahead | Annual comparison of month and day | Includes only `在職中` |
+
+Required and optional properties for each source:
+
+| Data source | Property | Notion type | Required | Usage |
+|---|---|---|---|---|
+| ToDo | `いつまでに` | Date | Yes | Due-date filtering |
+| ToDo | `ステータス` | Status or Select | Yes | Exclusion filtering |
+| ToDo | `関連プロジェクト` | Relation, Rich text, Select, Multi-select, Formula, or Rollup | No | Project grouping |
+| Project tasks | `By when` | Date | Yes | Due-date filtering |
+| Project tasks | `Status` | Status or Select | Yes | Exclusion filtering |
+| Project tasks | `Projects` | Relation, Rich text, Select, Multi-select, Formula, or Rollup | No | Project grouping |
+| Calendar | `Date` | Date | Yes | Schedule filtering; date ranges and times are supported |
+| Calendar | `Projects` | Relation, Rich text, Select, Multi-select, Formula, or Rollup | No | Project grouping |
+| Calendar | `ジャンル` | Select, Multi-select, Rich text, Formula, or Rollup | No | Schedule classification |
+| Identification documents | `有効期限` | Date | Yes | Expiry-date filtering |
+| Identification documents | `状態` | Status or Select | Yes | Excludes invalid documents |
+| Child lunch | `品名` | Title recommended; Rich text also supported | Yes | Menu item name |
+| Child lunch | `日付` | Date | Yes | Selects today's menu |
+| Child lunch | `曜日` | Rich text, Select, Formula, or Rollup | No | Displayed as supplementary information |
+| Child lunch | `サイズ` | Rich text, Select, Formula, or Rollup | No | Displayed as supplementary information |
+| Child lunch | `備考` | Rich text, Select, Formula, or Rollup | No | Displayed as supplementary information |
+| Birthdays | `Full Name` | Title recommended; Rich text also supported | Yes | Employee name |
+| Birthdays | `Birthday` | Date | Yes | Annual birthday comparison |
+| Birthdays | `Status` | Status or Select | Yes | Includes active employees only |
+
+`BIRTHDAY_NOTION_DATA_SOURCE_ID` can also be left empty to disable birthday checks. The birthday date must include the birth year when the report should display the employee's age.
 
 Update `app/config/app.php` if your Notion property names differ from the defaults:
 

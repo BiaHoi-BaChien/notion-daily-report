@@ -59,6 +59,53 @@ final class DailyReportCommandTest extends TestCase
         self::assertFileExists($logPath);
     }
 
+    public function testIncludesAnActiveCalendarRangeThatStartedBeforeToday(): void
+    {
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $slack = new StubSlackNotifier();
+        $config = $this->config();
+        $config['sources'][0] = [
+            'enabled' => true,
+            'name' => 'カレンダー',
+            'role' => '今日以降1週間の予定の確認',
+            'data_source_id' => 'calendar-source',
+            'date_property' => 'Date',
+            'status_property' => '',
+            'genre_property' => 'ジャンル',
+            'lookback_days' => 0,
+            'lookahead_days' => 7,
+            'include_active_ranges' => true,
+            'exclude_statuses' => [],
+            'filter_property_ids' => [],
+        ];
+
+        $command = new DailyReportCommand(
+            $config,
+            new StubNotionClient([
+                $this->calendarPageWithEnd('夏休み', '2026-07-18', '2026-08-17', '学校'),
+            ]),
+            new PropertyExtractor($timezone),
+            new DateFilter($timezone),
+            new ReportBuilder($timezone),
+            new Logger($logPath, $timezone),
+            $timezone,
+            false,
+            $slack
+        );
+
+        ob_start();
+        $exitCode = $command->run(['daily_report.php', '--date=2026-07-20']);
+        ob_end_clean();
+
+        self::assertSame(0, $exitCode);
+        self::assertStringContainsString('夏休み（3日目／8月17日まで）', (string) $slack->sentText);
+        self::assertStringContainsString(
+            '"date_filter":{"property":"Date","on_or_before":"2026-07-27"}',
+            (string) file_get_contents($logPath)
+        );
+    }
+
     public function testInvalidDateReturnsNonZeroExitCode(): void
     {
         $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
@@ -413,6 +460,30 @@ final class DailyReportCommandTest extends TestCase
         );
         self::assertStringContainsString('10:00｜URLなし｜', $slackReport);
         self::assertStringContainsString('<td>URLなし</td>', $htmlReport);
+    }
+
+    public function testRendersActiveMultiDayScheduleWithProgressAndEndDate(): void
+    {
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $today = new DateTimeImmutable('2026-07-20', $timezone);
+        $builder = new ReportBuilder($timezone);
+        $vacation = $this->extractedItem('夏休み', '2026-07-18', 'カレンダー', '今日以降1週間の予定の確認', '2026-07-18');
+        $vacation['date_end'] = '2026-08-17T00:00:00+07:00';
+
+        $items = $builder->classifyAndSort([$vacation], $today);
+        $textReport = $builder->renderSchedule($items, $today);
+        $slackReport = $builder->renderSchedule($items, $today, ReportBuilder::FORMAT_SLACK);
+        $htmlReport = $builder->renderSchedule($items, $today, ReportBuilder::FORMAT_HTML);
+        $notionBlocks = $builder->renderNotionBlocks(null, $items, $today);
+
+        self::assertSame('today', $items[0]['classification']);
+        self::assertStringContainsString('夏休み（3日目／8月17日まで）', $textReport);
+        self::assertStringContainsString('夏休み（3日目／8月17日まで）', $slackReport);
+        self::assertStringContainsString('夏休み（3日目／8月17日まで）', $htmlReport);
+        self::assertStringContainsString(
+            '夏休み（3日目／8月17日まで）',
+            json_encode($notionBlocks, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)
+        );
     }
 
     public function testRendersReadableNotionBlocksWithoutDividers(): void

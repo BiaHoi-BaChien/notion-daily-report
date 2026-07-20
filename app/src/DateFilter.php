@@ -45,13 +45,28 @@ final class DateFilter
                 return false;
             }
 
-            $itemDate = DateTimeImmutable::createFromFormat('!Y-m-d', (string) $item['date'], $this->timezone);
-            if (!$itemDate) {
+            $itemStart = DateTimeImmutable::createFromFormat('!Y-m-d', (string) $item['date'], $this->timezone);
+            if (!$itemStart) {
                 return false;
             }
 
-            return $itemDate >= $start && $itemDate <= $end;
+            $itemEnd = $this->dateFromValue($item['date_end'] ?? null) ?? $itemStart;
+
+            return $itemStart <= $end && $itemEnd >= $start;
         }));
+    }
+
+    private function dateFromValue(mixed $value): ?DateTimeImmutable
+    {
+        if (!is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        try {
+            return (new DateTimeImmutable($value))->setTimezone($this->timezone)->setTime(0, 0);
+        } catch (\Exception) {
+            return null;
+        }
     }
 
     /**

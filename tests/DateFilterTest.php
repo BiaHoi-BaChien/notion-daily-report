@@ -69,6 +69,24 @@ final class DateFilterTest extends TestCase
         self::assertSame('32', $filtered[1]['extra']['age']);
     }
 
+    public function testIncludesDateRangeThatOverlapsTheReportWindow(): void
+    {
+        $filter = new DateFilter($this->timezone);
+        $today = new DateTimeImmutable('2026-07-20', $this->timezone);
+        $source = [
+            'lookback_days' => 0,
+            'lookahead_days' => 7,
+        ];
+        $active = $this->item('夏休み', '2026-07-18', null);
+        $active['date_end'] = '2026-08-17T00:00:00+07:00';
+        $ended = $this->item('終了済み', '2026-07-01', null);
+        $ended['date_end'] = '2026-07-19T00:00:00+07:00';
+
+        $filtered = $filter->filter([$active, $ended], $source, $today);
+
+        self::assertSame(['夏休み'], array_column($filtered, 'title'));
+    }
+
     /**
      * @return array<string, mixed>
      */

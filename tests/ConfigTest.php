@@ -31,6 +31,7 @@ final class ConfigTest extends TestCase
 
             self::assertSame(['カレンダー'], array_column($config['sources'], 'name'));
             self::assertSame(['calendar-source'], array_column($config['sources'], 'data_source_id'));
+            self::assertTrue($config['sources'][0]['include_active_ranges']);
         } finally {
             foreach ($keys as $key) {
                 unset($_ENV[$key]);

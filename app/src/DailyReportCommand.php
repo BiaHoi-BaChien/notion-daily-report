@@ -302,21 +302,25 @@ final class DailyReportCommand
         $start = $today->modify(sprintf('-%d days', $lookbackDays))->format('Y-m-d');
         $end = $today->modify(sprintf('+%d days', $lookaheadDays))->format('Y-m-d');
 
-        return [
-            'and' => [
-                [
-                    'property' => $dateProperty,
-                    'date' => [
-                        'on_or_after' => $start,
-                    ],
+        $conditions = [];
+        if (($source['include_active_ranges'] ?? false) !== true) {
+            $conditions[] = [
+                'property' => $dateProperty,
+                'date' => [
+                    'on_or_after' => $start,
                 ],
-                [
-                    'property' => $dateProperty,
-                    'date' => [
-                        'on_or_before' => $end,
-                    ],
-                ],
+            ];
+        }
+
+        $conditions[] = [
+            'property' => $dateProperty,
+            'date' => [
+                'on_or_before' => $end,
             ],
+        ];
+
+        return [
+            'and' => $conditions,
         ];
     }
 

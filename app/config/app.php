@@ -54,6 +54,7 @@ $baseSources = [
         'genre_property' => 'ジャンル',
         'lookback_days' => 0,
         'lookahead_days' => 7,
+        'include_active_ranges' => true,
         'exclude_statuses' => [],
     ],
     [

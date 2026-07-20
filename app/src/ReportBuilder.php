@@ -44,7 +44,11 @@ final class ReportBuilder
     {
         $today = $today->setTimezone($this->timezone);
         $classified = array_map(function (array $item) use ($today): array {
-            $item['classification'] = $this->classify($item, $today);
+            $activeRangeLabel = $this->activeRangeLabel($item, $today);
+            $item['classification'] = $activeRangeLabel === null ? $this->classify($item, $today) : 'today';
+            if ($activeRangeLabel !== null) {
+                $item['active_range_label'] = $activeRangeLabel;
+            }
             return $item;
         }, $items);
 
@@ -641,7 +645,7 @@ final class ReportBuilder
      */
     private function formatTitle(array $item, string $format): string
     {
-        $title = (string) ($item['title'] ?? '無題');
+        $title = $this->displayTitle($item);
         $url = $this->notionUrl($item);
         if ($url === null) {
             return $this->formatText($title, $format);
@@ -793,8 +797,40 @@ final class ReportBuilder
      */
     private function notionTitleText(array $item): array
     {
-        $title = (string) ($item['title'] ?? '無題');
+        $title = $this->displayTitle($item);
         return $this->notionText($title, $this->notionUrl($item));
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function displayTitle(array $item): string
+    {
+        $title = (string) ($item['title'] ?? '無題');
+        $activeRangeLabel = trim((string) ($item['active_range_label'] ?? ''));
+
+        return $activeRangeLabel === '' ? $title : sprintf('%s（%s）', $title, $activeRangeLabel);
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function activeRangeLabel(array $item, DateTimeImmutable $today): ?string
+    {
+        $start = $this->dateTimeFromItem($item, 'date_start');
+        $end = $this->dateTimeFromItem($item, 'date_end');
+        if ($start === null || $end === null) {
+            return null;
+        }
+
+        $start = $start->setTime(0, 0);
+        $end = $end->setTime(0, 0);
+        $today = $today->setTimezone($this->timezone)->setTime(0, 0);
+        if ($end <= $start || $today < $start || $today > $end) {
+            return null;
+        }
+
+        return sprintf('%d日目／%sまで', $start->diff($today)->days + 1, $end->format('n月j日'));
     }
 
     /**

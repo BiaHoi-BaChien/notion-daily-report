@@ -314,6 +314,39 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringNotContainsString('カレー', $report);
     }
 
+    public function testReportsUnusedChildLunchEvenWhenNameIsUnordered(): void
+    {
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $slack = new StubSlackNotifier();
+
+        $command = new DailyReportCommand(
+            $this->childLunchConfig(),
+            new StubNotionClient([
+                'child-lunch-source' => [
+                    $this->childLunchPage('未注文', '2026-05-11', '月', '', '', '利用しない'),
+                ],
+            ]),
+            new PropertyExtractor($timezone),
+            new DateFilter($timezone),
+            new ReportBuilder($timezone),
+            new Logger($logPath, $timezone),
+            $timezone,
+            false,
+            $slack
+        );
+
+        ob_start();
+        $exitCode = $command->run(['daily_report.php', '--date=2026-05-11']);
+        $output = (string) ob_get_clean();
+        $report = (string) $slack->sentText;
+
+        self::assertSame(0, $exitCode);
+        self::assertSame('', $output);
+        self::assertStringContainsString('お弁当は利用しません。', $report);
+        self::assertStringNotContainsString('今日の子供のお弁当は「未注文」です。', $report);
+    }
+
     public function testResolvesRelationProjectTitlesForGrouping(): void
     {
         $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
@@ -379,6 +412,37 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringNotContainsString('Role-only project task', $report);
         self::assertStringContainsString('・Role-only identity document', $report);
         self::assertStringNotContainsString('Role-only identity document｜身分証明書', $report);
+    }
+
+    public function testRendersUnusedChildLunchAcrossAllReportFormats(): void
+    {
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $today = new DateTimeImmutable('2026-05-11', $timezone);
+        $builder = new ReportBuilder($timezone);
+        $childLunch = $this->extractedItem(
+            '未注文',
+            '2026-05-11',
+            '子供のお弁当',
+            '今日の子供のお弁当の献立確認',
+            '2026-05-11'
+        );
+        $childLunch['status'] = '利用しない';
+
+        $items = $builder->classifyAndSort([$childLunch], $today);
+        $reports = [
+            $builder->renderSchedule($items, $today),
+            $builder->renderSchedule($items, $today, ReportBuilder::FORMAT_SLACK),
+            $builder->renderSchedule($items, $today, ReportBuilder::FORMAT_HTML),
+            json_encode(
+                $builder->renderNotionBlocks(null, $items, $today),
+                JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR
+            ),
+        ];
+
+        foreach ($reports as $report) {
+            self::assertStringContainsString('お弁当は利用しません。', $report);
+            self::assertStringNotContainsString('今日の子供のお弁当は「未注文」です。', $report);
+        }
     }
 
     public function testRendersRelativeDateGroupLabelsForUpcomingAndOtherTopics(): void
@@ -1325,7 +1389,7 @@ final class DailyReportCommandTest extends TestCase
                     'role' => '今日の子供のお弁当の献立確認',
                     'data_source_id' => 'child-lunch-source',
                     'date_property' => '日付',
-                    'status_property' => '',
+                    'status_property' => '状況',
                     'title_property' => '品名',
                     'lookback_days' => 0,
                     'lookahead_days' => 0,
@@ -1505,7 +1569,14 @@ final class DailyReportCommandTest extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function childLunchPage(string $name, string $date, string $weekday, string $size, string $note): array
+    private function childLunchPage(
+        string $name,
+        string $date,
+        string $weekday,
+        string $size,
+        string $note,
+        ?string $status = null
+    ): array
     {
         return [
             'id' => strtolower(rawurlencode($name)),
@@ -1521,6 +1592,10 @@ final class DailyReportCommandTest extends TestCase
                 '日付' => [
                     'type' => 'date',
                     'date' => ['start' => $date],
+                ],
+                '状況' => [
+                    'type' => 'status',
+                    'status' => $status === null ? null : ['name' => $status],
                 ],
                 '曜日' => [
                     'type' => 'rich_text',

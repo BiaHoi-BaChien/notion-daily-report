@@ -120,9 +120,9 @@ final class ReportBuilder
 
             if ($childLunches !== []) {
                 foreach ($this->sortRows($childLunches, true) as $childLunch) {
-                    $text = $this->childLunchText($childLunch);
-                    if ($text !== null) {
-                        $lines[] = sprintf('今日の子供のお弁当は「%s」です。', $this->formatText($text, $format));
+                    $reportText = $this->childLunchReportText($childLunch, $format);
+                    if ($reportText !== null) {
+                        $lines[] = $reportText;
                     }
                 }
             }
@@ -193,11 +193,11 @@ final class ReportBuilder
             $blocks[] = $this->notionHeading(2, '💡 その他トピックス');
 
             foreach ($this->sortRows($childLunches, true) as $childLunch) {
-                $text = $this->childLunchText($childLunch);
-                if ($text !== null) {
+                $reportText = $this->childLunchReportText($childLunch);
+                if ($reportText !== null) {
                     $blocks[] = $this->notionCallout(
                         '🍱',
-                        $this->notionText(sprintf('今日の子供のお弁当は「%s」です。', $text))
+                        $this->notionText($reportText)
                     );
                 }
             }
@@ -1148,6 +1148,23 @@ final class ReportBuilder
         $weekdays = ['日', '月', '火', '水', '木', '金', '土'];
 
         return $weekdays[(int) $date->setTimezone($this->timezone)->format('w')];
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     */
+    private function childLunchReportText(array $item, string $format = self::FORMAT_TEXT): ?string
+    {
+        if (trim((string) ($item['status'] ?? '')) === '利用しない') {
+            return 'お弁当は利用しません。';
+        }
+
+        $text = $this->childLunchText($item);
+        if ($text === null) {
+            return null;
+        }
+
+        return sprintf('今日の子供のお弁当は「%s」です。', $this->formatText($text, $format));
     }
 
     /**

@@ -90,6 +90,7 @@ Required and optional properties for each source:
 | Identification documents | `状態` | Status or Select | Yes | Excludes invalid documents |
 | Child lunch | `品名` | Title recommended; Rich text also supported | Yes | Menu item name |
 | Child lunch | `日付` | Date | Yes | Selects today's menu |
+| Child lunch | `状況` | Status or Select | Yes | Reports `お弁当は利用しません` when set to `利用しない` |
 | Child lunch | `曜日` | Rich text, Select, Formula, or Rollup | No | Displayed as supplementary information |
 | Child lunch | `サイズ` | Rich text, Select, Formula, or Rollup | No | Displayed as supplementary information |
 | Child lunch | `備考` | Rich text, Select, Formula, or Rollup | No | Displayed as supplementary information |

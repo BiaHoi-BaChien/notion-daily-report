@@ -541,13 +541,14 @@ final class DailyReportCommandTest extends TestCase
         $notionBlocks = $builder->renderNotionBlocks(null, $items, $today);
 
         self::assertSame('today', $items[0]['classification']);
-        self::assertStringContainsString('夏休み（3日目／8月17日まで）', $textReport);
-        self::assertStringContainsString('夏休み（3日目／8月17日まで）', $slackReport);
-        self::assertStringContainsString('夏休み（3日目／8月17日まで）', $htmlReport);
-        self::assertStringContainsString(
-            '夏休み（3日目／8月17日まで）',
-            json_encode($notionBlocks, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)
-        );
+        foreach ([
+            $textReport,
+            $slackReport,
+            $htmlReport,
+            json_encode($notionBlocks, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+        ] as $report) {
+            self::assertSame(2, substr_count($report, '夏休み（3日目／8月17日まで）'));
+        }
     }
 
     public function testRendersReadableNotionBlocksWithoutDividers(): void

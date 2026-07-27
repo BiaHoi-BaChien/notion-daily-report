@@ -302,7 +302,10 @@ final class ReportBuilder
 
         return array_values(array_filter(
             $items,
-            fn (array $item): bool => ($item['classification'] ?? null) === 'upcoming'
+            fn (array $item): bool => (
+                ($item['classification'] ?? null) === 'upcoming'
+                || isset($item['active_range_label'])
+            )
                 && !$this->isIdentityDocument($item)
                 && !$this->isChildLunch($item)
                 && !$this->isBirthday($item)

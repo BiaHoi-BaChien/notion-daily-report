@@ -32,28 +32,35 @@ final class DateFilter
             return $this->filterAnnual($items, $start, $end, $excludeStatuses, $includeStatuses);
         }
 
-        return array_values(array_filter($items, function (array $item) use ($start, $end, $excludeStatuses, $includeStatuses): bool {
+        $matches = [];
+        foreach ($items as $item) {
             if (($item['date'] ?? null) === null || $item['date'] === '') {
-                return false;
+                continue;
             }
 
             if ($this->isExcludedStatus($item['status'] ?? null, $excludeStatuses)) {
-                return false;
+                continue;
             }
 
             if ($includeStatuses !== [] && !in_array((string) ($item['status'] ?? ''), $includeStatuses, true)) {
-                return false;
+                continue;
             }
 
             $itemStart = DateTimeImmutable::createFromFormat('!Y-m-d', (string) $item['date'], $this->timezone);
             if (!$itemStart) {
-                return false;
+                continue;
             }
 
             $itemEnd = $this->dateFromValue($item['date_end'] ?? null) ?? $itemStart;
+            if ($itemStart > $end || $itemEnd < $start) {
+                continue;
+            }
 
-            return $itemStart <= $end && $itemEnd >= $start;
-        }));
+            $item['report_window_end'] = $end->format('Y-m-d');
+            $matches[] = $item;
+        }
+
+        return $matches;
     }
 
     private function dateFromValue(mixed $value): ?DateTimeImmutable

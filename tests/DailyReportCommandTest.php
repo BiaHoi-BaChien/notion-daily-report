@@ -95,13 +95,22 @@ final class DailyReportCommandTest extends TestCase
         );
 
         ob_start();
-        $exitCode = $command->run(['daily_report.php', '--date=2026-07-20']);
+        $exitCode = $command->run(['daily_report.php', '--date=2026-07-28']);
         ob_end_clean();
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('夏休み（3日目／8月17日まで）', (string) $slack->sentText);
+        $report = (string) $slack->sentText;
+        self::assertStringContainsString('夏休み（11日目／8月17日まで）', $report);
+        self::assertStringContainsString('明日 07/29（水）', $report);
+        self::assertStringContainsString('夏休み（12日目／8月17日まで）', $report);
+        self::assertStringContainsString('あさって 07/30（木）', $report);
+        self::assertStringContainsString('夏休み（13日目／8月17日まで）', $report);
+        self::assertStringContainsString('08/04（火）', $report);
+        self::assertStringContainsString('夏休み（18日目／8月17日まで）', $report);
+        self::assertStringNotContainsString('07/18（土）', $report);
+        self::assertSame(8, substr_count($report, '夏休み（'));
         self::assertStringContainsString(
-            '"date_filter":{"property":"Date","on_or_before":"2026-07-27"}',
+            '"date_filter":{"property":"Date","on_or_before":"2026-08-04"}',
             (string) file_get_contents($logPath)
         );
     }
@@ -533,6 +542,7 @@ final class DailyReportCommandTest extends TestCase
         $builder = new ReportBuilder($timezone);
         $vacation = $this->extractedItem('夏休み', '2026-07-18', 'カレンダー', '今日以降1週間の予定の確認', '2026-07-18');
         $vacation['date_end'] = '2026-08-17T00:00:00+07:00';
+        $vacation['report_window_end'] = '2026-07-27';
 
         $items = $builder->classifyAndSort([$vacation], $today);
         $textReport = $builder->renderSchedule($items, $today);
@@ -547,7 +557,10 @@ final class DailyReportCommandTest extends TestCase
             $htmlReport,
             json_encode($notionBlocks, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
         ] as $report) {
-            self::assertSame(2, substr_count($report, '夏休み（3日目／8月17日まで）'));
+            self::assertSame(1, substr_count($report, '夏休み（3日目／8月17日まで）'));
+            self::assertSame(1, substr_count($report, '夏休み（4日目／8月17日まで）'));
+            self::assertSame(1, substr_count($report, '夏休み（10日目／8月17日まで）'));
+            self::assertStringNotContainsString('07/18（土）', $report);
         }
     }
 

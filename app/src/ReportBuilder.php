@@ -299,14 +299,22 @@ final class ReportBuilder
     private function upcomingItems(array $items, DateTimeImmutable $today): array
     {
         $tomorrow = $today->setTimezone($this->timezone)->modify('+1 day')->format('Y-m-d');
+        $upcoming = [];
+        foreach ($items as $item) {
+            $rangeOccurrences = $this->upcomingRangeOccurrences($item, $today);
+            if ($rangeOccurrences !== null) {
+                array_push($upcoming, ...$rangeOccurrences);
+                continue;
+            }
+
+            if (($item['classification'] ?? null) === 'upcoming') {
+                $upcoming[] = $item;
+            }
+        }
 
         return array_values(array_filter(
-            $items,
-            fn (array $item): bool => (
-                ($item['classification'] ?? null) === 'upcoming'
-                || isset($item['active_range_label'])
-            )
-                && !$this->isIdentityDocument($item)
+            $upcoming,
+            fn (array $item): bool => !$this->isIdentityDocument($item)
                 && !$this->isChildLunch($item)
                 && !$this->isBirthday($item)
                 && !$this->isTomorrowTimedTodoOrCalendar($item, $tomorrow)
@@ -834,6 +842,49 @@ final class ReportBuilder
         }
 
         return sprintf('%d日目／%sまで', $start->diff($today)->days + 1, $end->format('n月j日'));
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     * @return null|array<int, array<string, mixed>>
+     */
+    private function upcomingRangeOccurrences(array $item, DateTimeImmutable $today): ?array
+    {
+        $start = $this->dateTimeFromItem($item, 'date_start');
+        $end = $this->dateTimeFromItem($item, 'date_end');
+        $windowEnd = DateTimeImmutable::createFromFormat(
+            '!Y-m-d',
+            (string) ($item['report_window_end'] ?? ''),
+            $this->timezone
+        );
+        if ($start === null || $end === null || !$windowEnd) {
+            return null;
+        }
+
+        $start = $start->setTime(0, 0);
+        $end = $end->setTime(0, 0);
+        if ($end <= $start) {
+            return null;
+        }
+
+        $firstOccurrence = $today->setTimezone($this->timezone)->setTime(0, 0)->modify('+1 day');
+        if ($start > $firstOccurrence) {
+            $firstOccurrence = $start;
+        }
+
+        $lastOccurrence = $end < $windowEnd ? $end : $windowEnd;
+        $occurrences = [];
+        for ($date = $firstOccurrence; $date <= $lastOccurrence; $date = $date->modify('+1 day')) {
+            $occurrence = $item;
+            $occurrence['date'] = $date->format('Y-m-d');
+            $occurrence['date_start'] = $date->format('Y-m-d');
+            $occurrence['date_has_time'] = false;
+            $occurrence['classification'] = 'upcoming';
+            $occurrence['active_range_label'] = $this->activeRangeLabel($item, $date);
+            $occurrences[] = $occurrence;
+        }
+
+        return $occurrences;
     }
 
     /**

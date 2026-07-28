@@ -85,6 +85,7 @@ final class DateFilterTest extends TestCase
         $filtered = $filter->filter([$active, $ended], $source, $today);
 
         self::assertSame(['夏休み'], array_column($filtered, 'title'));
+        self::assertSame('2026-07-27', $filtered[0]['report_window_end']);
     }
 
     /**

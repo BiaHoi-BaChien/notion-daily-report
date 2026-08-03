@@ -74,6 +74,114 @@ final class NotionClientTest extends TestCase
         self::assertSame('期限', $secondBody['filter']['and'][0]['property']);
     }
 
+    public function testRejectsRepeatedPaginationCursor(): void
+    {
+        $history = [];
+        $repeatedPage = json_encode([
+            'results' => [],
+            'has_more' => true,
+            'next_cursor' => 'cursor-2',
+        ]);
+        $mock = new MockHandler([
+            new Response(200, [], $repeatedPage),
+            new Response(200, [], $repeatedPage),
+        ]);
+
+        $stack = HandlerStack::create($mock);
+        $stack->push(Middleware::history($history));
+        $httpClient = new Client([
+            'base_uri' => 'https://api.notion.com',
+            'handler' => $stack,
+        ]);
+
+        $client = new NotionClient('secret-token', '2026-03-11', 20, $httpClient);
+
+        try {
+            $client->queryDataSource('source-id');
+            self::fail('Expected a repeated cursor to be rejected.');
+        } catch (NotionApiException $exception) {
+            self::assertStringContainsString('repeated cursor', $exception->getMessage());
+        }
+
+        self::assertCount(2, $history);
+    }
+
+    public function testRejectsInvalidPaginationCursor(): void
+    {
+        $mock = new MockHandler([
+            new Response(200, [], json_encode([
+                'results' => [],
+                'has_more' => true,
+                'next_cursor' => ['unexpected'],
+            ])),
+        ]);
+        $httpClient = new Client([
+            'base_uri' => 'https://api.notion.com',
+            'handler' => HandlerStack::create($mock),
+        ]);
+
+        $client = new NotionClient('secret-token', '2026-03-11', 20, $httpClient);
+
+        $this->expectException(NotionApiException::class);
+        $this->expectExceptionMessage('invalid cursor');
+
+        $client->queryDataSource('source-id');
+    }
+
+    public function testRejectsPaginationBeyondMaximumPageCount(): void
+    {
+        $history = [];
+        $responses = [];
+        for ($page = 1; $page <= 100; $page++) {
+            $responses[] = new Response(200, [], json_encode([
+                'results' => [],
+                'has_more' => true,
+                'next_cursor' => 'cursor-' . $page,
+            ]));
+        }
+
+        $stack = HandlerStack::create(new MockHandler($responses));
+        $stack->push(Middleware::history($history));
+        $httpClient = new Client([
+            'base_uri' => 'https://api.notion.com',
+            'handler' => $stack,
+        ]);
+
+        $client = new NotionClient('secret-token', '2026-03-11', 20, $httpClient);
+
+        try {
+            $client->queryDataSource('source-id');
+            self::fail('Expected the page limit to be enforced.');
+        } catch (NotionApiException $exception) {
+            self::assertStringContainsString('maximum of 100 pages', $exception->getMessage());
+        }
+
+        self::assertCount(100, $history);
+    }
+
+    public function testRejectsPaginationBeyondMaximumResultCount(): void
+    {
+        $results = array_fill(0, 10001, ['id' => 'page-id']);
+        $mock = new MockHandler([
+            new Response(200, [], json_encode([
+                'results' => $results,
+                'has_more' => false,
+                'next_cursor' => null,
+            ])),
+        ]);
+        $httpClient = new Client([
+            'base_uri' => 'https://api.notion.com',
+            'handler' => HandlerStack::create($mock),
+        ]);
+
+        $client = new NotionClient('secret-token', '2026-03-11', 20, $httpClient);
+
+        $this->expectException(NotionApiException::class);
+        $this->expectExceptionMessage('maximum of 10000 results');
+
+        $client->queryDataSource('source-id');
+    }
+
     public function testResolvesSingleDataSourceWhenDatabaseIdIsConfigured(): void
     {
         $history = [];

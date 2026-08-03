@@ -15,6 +15,8 @@ final class NotionClient implements NotionClientInterface
 {
     private const BASE_URI = 'https://api.notion.com';
     private const MAX_CHILDREN_PER_REQUEST = 100;
+    private const MAX_QUERY_PAGES = 100;
+    private const MAX_QUERY_RESULTS = 10000;
 
     private ClientInterface $client;
 
@@ -45,8 +47,18 @@ final class NotionClient implements NotionClientInterface
         $triedDatabaseLookup = false;
         $results = [];
         $nextCursor = null;
+        $seenCursors = [];
+        $pageCount = 0;
 
         do {
+            if ($pageCount >= self::MAX_QUERY_PAGES) {
+                throw new NotionApiException(sprintf(
+                    'Notion API pagination exceeded the maximum of %d pages for data source "%s".',
+                    self::MAX_QUERY_PAGES,
+                    $queryId
+                ));
+            }
+
             $payload = ['page_size' => 100];
             if ($filter !== []) {
                 $payload['filter'] = $filter;
@@ -73,13 +85,39 @@ final class NotionClient implements NotionClientInterface
                 }
             }
 
+            $pageCount++;
             foreach ($response['results'] ?? [] as $page) {
                 if (is_array($page)) {
+                    if (count($results) >= self::MAX_QUERY_RESULTS) {
+                        throw new NotionApiException(sprintf(
+                            'Notion API pagination exceeded the maximum of %d results for data source "%s".',
+                            self::MAX_QUERY_RESULTS,
+                            $queryId
+                        ));
+                    }
+
                     $results[] = $page;
                 }
             }
 
             $nextCursor = ($response['has_more'] ?? false) ? ($response['next_cursor'] ?? null) : null;
+            if ($nextCursor !== null) {
+                if (!is_string($nextCursor) || trim($nextCursor) === '') {
+                    throw new NotionApiException(sprintf(
+                        'Notion API pagination returned an invalid cursor for data source "%s".',
+                        $queryId
+                    ));
+                }
+
+                if (isset($seenCursors[$nextCursor])) {
+                    throw new NotionApiException(sprintf(
+                        'Notion API pagination returned a repeated cursor for data source "%s".',
+                        $queryId
+                    ));
+                }
+
+                $seenCursors[$nextCursor] = true;
+            }
         } while ($nextCursor !== null);
 
         return $results;

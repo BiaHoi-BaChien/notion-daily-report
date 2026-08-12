@@ -58,6 +58,8 @@ final class OpenAIClientTest extends TestCase
         self::assertSame('gpt-5.2', $body['model']);
         self::assertStringContainsString('整形や再分類はしない', $body['instructions']);
         self::assertStringContainsString('先頭の日付・曜日行', $body['instructions']);
+        self::assertStringContainsString('入力に健康セクションが含まれる場合があります', $body['instructions']);
+        self::assertStringContainsString('診断、因果関係、服薬判断を行わない', $body['instructions']);
         self::assertStringContainsString('ベトナム・ホーチミン在住の日本人ブリッジSE', $body['instructions']);
         self::assertStringContainsString('同じ気候ネタに偏らない', $body['instructions']);
         self::assertStringContainsString('冒頭の切り口は日替わりで変えてください', $body['instructions']);

@@ -9,9 +9,16 @@ interface NotionClientInterface
     /**
      * @param array<int, string> $filterPropertyIds
      * @param array<string, mixed> $filter
+     * @param array<int, array<string, string>> $sorts
      * @return array<int, array<string, mixed>>
      */
-    public function queryDataSource(string $dataSourceId, array $filterPropertyIds = [], array $filter = []): array;
+    public function queryDataSource(
+        string $dataSourceId,
+        array $filterPropertyIds = [],
+        array $filter = [],
+        array $sorts = [],
+        ?int $maxResults = null
+    ): array;
 
     /**
      * @return array<string, mixed>

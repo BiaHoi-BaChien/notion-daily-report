@@ -228,7 +228,9 @@ final class DailyReportCommand
         $pages = $this->notionClient->queryDataSource(
             (string) $source['data_source_id'],
             $source['filter_property_ids'] ?? [],
-            $filter
+            $filter,
+            $this->notionSorts($source),
+            isset($source['latest_results']) ? (int) $source['latest_results'] : null
         );
         $this->logger->info('notion_fetch_complete', [
             'run_id' => $runId,
@@ -246,7 +248,15 @@ final class DailyReportCommand
                 $item = $this->propertyExtractor->extract($page, $source);
                 $extractedCount++;
 
-                $filteredItem = $this->dateFilter->filter([$item], $source, $today);
+                if (($source['health_metric'] ?? null) !== null
+                    && !$this->hasCompleteHealthNumbers($item, $source)
+                ) {
+                    continue;
+                }
+
+                $filteredItem = ($source['health_metric'] ?? null) === null
+                    ? $this->dateFilter->filter([$item], $source, $today)
+                    : [$item];
                 if ($filteredItem !== []) {
                     $items[] = $filteredItem[0];
                 }
@@ -296,6 +306,25 @@ final class DailyReportCommand
             return [];
         }
 
+        if (($source['health_metric'] ?? null) !== null) {
+            $conditions = [[
+                'property' => $dateProperty,
+                'date' => [
+                    'on_or_before' => $today->setTimezone($this->timezone)->format('Y-m-d'),
+                ],
+            ]];
+            foreach (($source['number_properties'] ?? []) as $propertyName) {
+                if (is_string($propertyName) && trim($propertyName) !== '') {
+                    $conditions[] = [
+                        'property' => $propertyName,
+                        'number' => ['is_not_empty' => true],
+                    ];
+                }
+            }
+
+            return ['and' => $conditions];
+        }
+
         $lookbackDays = max(0, (int) ($source['lookback_days'] ?? 0));
         $lookaheadDays = max(0, (int) ($source['lookahead_days'] ?? 0));
         $today = $today->setTimezone($this->timezone);
@@ -322,6 +351,51 @@ final class DailyReportCommand
         return [
             'and' => $conditions,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $source
+     * @return array<int, array<string, string>>
+     */
+    private function notionSorts(array $source): array
+    {
+        if (($source['health_metric'] ?? null) === null) {
+            return [];
+        }
+
+        return [
+            [
+                'property' => (string) $source['date_property'],
+                'direction' => 'descending',
+            ],
+            [
+                'timestamp' => 'created_time',
+                'direction' => 'descending',
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     * @param array<string, mixed> $source
+     */
+    private function hasCompleteHealthNumbers(array $item, array $source): bool
+    {
+        $numbers = $item['numbers'] ?? null;
+        if (!is_array($numbers)) {
+            return false;
+        }
+
+        foreach (array_keys($source['number_properties'] ?? []) as $key) {
+            if (!is_string($key)
+                || !array_key_exists($key, $numbers)
+                || (!is_int($numbers[$key]) && !is_float($numbers[$key]))
+            ) {
+                return false;
+            }
+        }
+
+        return $numbers !== [];
     }
 
     /**
@@ -441,6 +515,18 @@ final class DailyReportCommand
 
         if (!is_array($source['exclude_statuses'])) {
             throw new ConfigException(sprintf('Source "%s" exclude_statuses must be an array.', $source['name']));
+        }
+
+        if (($source['health_metric'] ?? null) !== null) {
+            $numberProperties = $source['number_properties'] ?? null;
+            if (!is_array($numberProperties) || $numberProperties === []) {
+                throw new ConfigException(sprintf('Source "%s" number_properties must not be empty.', $source['name']));
+            }
+            foreach ($numberProperties as $propertyName) {
+                if (!is_string($propertyName) || trim($propertyName) === '') {
+                    throw new ConfigException(sprintf('Source "%s" has an empty number property name.', $source['name']));
+                }
+            }
         }
     }
 

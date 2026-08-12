@@ -230,6 +230,48 @@ final class PropertyExtractorTest extends TestCase
         ]), $this->source());
     }
 
+    public function testExtractsHealthNumberPropertiesIncludingZeroAndDecimals(): void
+    {
+        $source = $this->source();
+        $source['health_metric'] = 'vital';
+        $source['number_properties'] = [
+            'systolic' => '収縮期',
+            'diastolic' => '拡張期',
+            'pulse' => '脈拍',
+            'optional' => '任意値',
+        ];
+
+        $item = $this->extractor->extract($this->page([
+            '期限' => ['type' => 'date', 'date' => ['start' => '2026-08-11T21:11:00+07:00']],
+            'ステータス' => ['type' => 'status', 'status' => null],
+            '収縮期' => ['type' => 'number', 'number' => 120],
+            '拡張期' => ['type' => 'number', 'number' => 80.5],
+            '脈拍' => ['type' => 'number', 'number' => 0],
+            '任意値' => ['type' => 'number', 'number' => null],
+        ]), $source);
+
+        self::assertSame('vital', $item['health_metric']);
+        self::assertSame(120, $item['numbers']['systolic']);
+        self::assertSame(80.5, $item['numbers']['diastolic']);
+        self::assertSame(0, $item['numbers']['pulse']);
+        self::assertNull($item['numbers']['optional']);
+    }
+
+    public function testRejectsNonNumberHealthProperty(): void
+    {
+        $source = $this->source();
+        $source['number_properties'] = ['weight' => '体重'];
+
+        $this->expectException(PropertyExtractionException::class);
+        $this->expectExceptionMessage('Property "体重" must be a Notion number property.');
+
+        $this->extractor->extract($this->page([
+            '期限' => ['type' => 'date', 'date' => ['start' => '2026-08-11']],
+            'ステータス' => ['type' => 'status', 'status' => null],
+            '体重' => ['type' => 'rich_text', 'rich_text' => [['plain_text' => '73.25']]],
+        ]), $source);
+    }
+
     /**
      * @param array<string, mixed> $properties
      * @return array<string, mixed>

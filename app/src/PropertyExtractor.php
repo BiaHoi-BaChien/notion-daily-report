@@ -42,8 +42,11 @@ final class PropertyExtractor
             'project' => $this->extractProject($properties, $source['project_property'] ?? null),
             'project_relation_ids' => $this->extractRelationIds($properties, $source['project_property'] ?? null),
             'extra' => $this->extractExtraProperties($properties, $source['extra_properties'] ?? []),
+            'numbers' => $this->extractNumberProperties($properties, $source['number_properties'] ?? []),
+            'health_metric' => $source['health_metric'] ?? null,
             'classification' => null,
             'url' => $page['url'] ?? null,
+            'created_time' => $page['created_time'] ?? null,
             'last_edited_time' => $page['last_edited_time'] ?? null,
         ];
     }
@@ -100,6 +103,38 @@ final class PropertyExtractor
         }
 
         return $extra;
+    }
+
+    /**
+     * @param array<string, mixed> $properties
+     * @param mixed $propertyNames
+     * @return array<string, int|float|null>
+     */
+    private function extractNumberProperties(array $properties, mixed $propertyNames): array
+    {
+        if (!is_array($propertyNames)) {
+            return [];
+        }
+
+        $numbers = [];
+        foreach ($propertyNames as $key => $propertyName) {
+            if (!is_string($key) || !is_string($propertyName) || trim($propertyName) === '') {
+                continue;
+            }
+
+            $property = $this->requiredProperty($properties, $propertyName);
+            if (($property['type'] ?? null) !== 'number') {
+                throw new PropertyExtractionException(sprintf(
+                    'Property "%s" must be a Notion number property.',
+                    $propertyName
+                ));
+            }
+
+            $value = $property['number'] ?? null;
+            $numbers[$key] = is_int($value) || is_float($value) ? $value : null;
+        }
+
+        return $numbers;
     }
 
     /**

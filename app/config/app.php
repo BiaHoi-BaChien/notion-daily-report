@@ -84,6 +84,53 @@ $baseSources = [
             'note' => '備考',
         ],
     ],
+    [
+        'name' => '体重',
+        'data_source_id' => trim((string) $env('NOTION_WEIGHT_DATA_SOURCE_ID', '')),
+        'role' => '直近の体重記録の確認',
+        'date_property' => trim((string) $env('NOTION_WEIGHT_DATE_PROPERTY', '日付')),
+        'status_property' => '',
+        'lookback_days' => 0,
+        'lookahead_days' => 0,
+        'exclude_statuses' => [],
+        'health_metric' => 'weight',
+        'number_properties' => [
+            'weight' => trim((string) $env('NOTION_WEIGHT_VALUE_PROPERTY', '体重')),
+        ],
+        'latest_results' => 3,
+    ],
+    [
+        'name' => '歩数',
+        'data_source_id' => trim((string) $env('NOTION_STEPS_DATA_SOURCE_ID', '')),
+        'role' => '直近の歩数記録の確認',
+        'date_property' => trim((string) $env('NOTION_STEPS_DATE_PROPERTY', '日付')),
+        'status_property' => '',
+        'lookback_days' => 0,
+        'lookahead_days' => 0,
+        'exclude_statuses' => [],
+        'health_metric' => 'steps',
+        'number_properties' => [
+            'steps' => trim((string) $env('NOTION_STEPS_VALUE_PROPERTY', '歩数')),
+        ],
+        'latest_results' => 3,
+    ],
+    [
+        'name' => 'バイタル',
+        'data_source_id' => trim((string) $env('NOTION_VITAL_DATA_SOURCE_ID', '')),
+        'role' => '直近の血圧と脈拍記録の確認',
+        'date_property' => trim((string) $env('NOTION_VITAL_DATE_PROPERTY', '日付')),
+        'status_property' => '',
+        'lookback_days' => 0,
+        'lookahead_days' => 0,
+        'exclude_statuses' => [],
+        'health_metric' => 'vital',
+        'number_properties' => [
+            'systolic' => trim((string) $env('NOTION_VITAL_SYSTOLIC_PROPERTY', '収縮期')),
+            'diastolic' => trim((string) $env('NOTION_VITAL_DIASTOLIC_PROPERTY', '拡張期')),
+            'pulse' => trim((string) $env('NOTION_VITAL_PULSE_PROPERTY', '脈拍')),
+        ],
+        'latest_results' => 3,
+    ],
 ];
 
 $sources = array_values(array_filter(

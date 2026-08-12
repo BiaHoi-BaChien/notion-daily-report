@@ -28,6 +28,17 @@ NOTION_PROJECT_TASK_DATA_SOURCE_ID=
 NOTION_CALENDAR_DATA_SOURCE_ID=
 NOTION_ID_DOCUMENT_DATA_SOURCE_ID=
 NOTION_CHILD_LUNCH_DATA_SOURCE_ID=
+NOTION_WEIGHT_DATA_SOURCE_ID=
+NOTION_WEIGHT_DATE_PROPERTY=日付
+NOTION_WEIGHT_VALUE_PROPERTY=体重
+NOTION_STEPS_DATA_SOURCE_ID=
+NOTION_STEPS_DATE_PROPERTY=日付
+NOTION_STEPS_VALUE_PROPERTY=歩数
+NOTION_VITAL_DATA_SOURCE_ID=
+NOTION_VITAL_DATE_PROPERTY=日付
+NOTION_VITAL_SYSTOLIC_PROPERTY=収縮期
+NOTION_VITAL_DIASTOLIC_PROPERTY=拡張期
+NOTION_VITAL_PULSE_PROPERTY=脈拍
 BIRTHDAY_NOTION_DATA_SOURCE_ID=
 SLACK_ENABLED=true
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
@@ -57,6 +68,9 @@ NOTION_PROJECT_TASK_DATA_SOURCE_ID=yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
 NOTION_CALENDAR_DATA_SOURCE_ID=
 NOTION_ID_DOCUMENT_DATA_SOURCE_ID=
 NOTION_CHILD_LUNCH_DATA_SOURCE_ID=
+NOTION_WEIGHT_DATA_SOURCE_ID=
+NOTION_STEPS_DATA_SOURCE_ID=
+NOTION_VITAL_DATA_SOURCE_ID=
 BIRTHDAY_NOTION_DATA_SOURCE_ID=
 ```
 
@@ -71,6 +85,9 @@ Property names are case-sensitive. The names below are the defaults in `app/conf
 | `NOTION_CALENDAR_DATA_SOURCE_ID` | Check the upcoming schedule | Today through 7 days ahead | None |
 | `NOTION_ID_DOCUMENT_DATA_SOURCE_ID` | Check identification documents nearing expiry | Today through 60 days ahead | Excludes `無効` |
 | `NOTION_CHILD_LUNCH_DATA_SOURCE_ID` | Check today's child lunch menu | Today only | None |
+| `NOTION_WEIGHT_DATA_SOURCE_ID` | Show recent weight measurements | Latest 3 on or before the report date | Requires a weight value |
+| `NOTION_STEPS_DATA_SOURCE_ID` | Show recent step counts | Latest 3 on or before the report date | Requires a step value |
+| `NOTION_VITAL_DATA_SOURCE_ID` | Show recent blood pressure and pulse measurements | Latest 3 on or before the report date | Requires all three vital values |
 | `BIRTHDAY_NOTION_DATA_SOURCE_ID` | Check active employees with birthdays today through 2 days ahead | Annual comparison of month and day | Includes only `在職中` |
 
 Required and optional properties for each source:
@@ -94,11 +111,33 @@ Required and optional properties for each source:
 | Child lunch | `曜日` | Rich text, Select, Formula, or Rollup | No | Displayed as supplementary information |
 | Child lunch | `サイズ` | Rich text, Select, Formula, or Rollup | No | Displayed as supplementary information |
 | Child lunch | `備考` | Rich text, Select, Formula, or Rollup | No | Displayed as supplementary information |
+| Weight | `日付` | Date | Yes | Measurement date and optional time |
+| Weight | `体重` | Number | Yes | Displayed in kg |
+| Steps | `日付` | Date | Yes | Measurement date and optional time |
+| Steps | `歩数` | Number | Yes | Displayed with digit grouping |
+| Vitals | `日付` | Date | Yes | Measurement date and optional time |
+| Vitals | `収縮期` | Number | Yes | Systolic blood pressure in mmHg |
+| Vitals | `拡張期` | Number | Yes | Diastolic blood pressure in mmHg |
+| Vitals | `脈拍` | Number | Yes | Pulse in beats per minute |
 | Birthdays | `Full Name` | Title recommended; Rich text also supported | Yes | Employee name |
 | Birthdays | `Birthday` | Date | Yes | Annual birthday comparison |
 | Birthdays | `Status` | Status or Select | Yes | Includes active employees only |
 
 `BIRTHDAY_NOTION_DATA_SOURCE_ID` can also be left empty to disable birthday checks. The birthday date must include the birth year when the report should display the employee's age.
+
+Health data-source IDs and property names are configured entirely through environment variables. Leave an ID empty to omit that metric. The report adds a `🏥 健康` section immediately before `💡 その他トピックス` and displays up to three valid measurements per metric, newest first. The report date, including `--date`, is the upper bound. A metric with no usable records or a failed query is omitted; the whole section is omitted when all three metrics are unavailable.
+
+```text
+🏥 健康
+体重
+・8月11日 07:16｜73.25kg
+
+歩数
+・8月11日 00:00｜4,275歩
+
+バイタル
+・8月11日 21:11｜120/80mmHg｜脈拍70回/分
+```
 
 Update `app/config/app.php` if your Notion property names differ from the defaults:
 

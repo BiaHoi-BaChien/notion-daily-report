@@ -111,6 +111,23 @@ final class ReportBuilder
             $format
         );
 
+        $healthGroups = $this->healthGroups($items);
+        if ($healthGroups !== []) {
+            $lines[] = '';
+            $this->appendSectionHeader($lines, '🏥 健康');
+            $groupIndex = 0;
+            foreach ($healthGroups as $label => $healthItems) {
+                if ($groupIndex > 0) {
+                    $lines[] = '';
+                }
+                $lines[] = $this->formatText($label, $format);
+                foreach ($healthItems as $healthItem) {
+                    $lines[] = $this->formatText($this->healthText($healthItem), $format);
+                }
+                $groupIndex++;
+            }
+        }
+
         $childLunches = $this->childLunchItems($items);
         $identityDocuments = $this->identityDocumentItems($items);
         $birthdays = $this->birthdayItems($items);
@@ -185,6 +202,17 @@ final class ReportBuilder
 
         $blocks[] = $this->notionHeading(2, '📌 近日確認');
         $this->appendNotionGroupedRows($blocks, $this->upcomingItems($items, $today), $today, true, true);
+
+        $healthGroups = $this->healthGroups($items);
+        if ($healthGroups !== []) {
+            $blocks[] = $this->notionHeading(2, '🏥 健康');
+            foreach ($healthGroups as $label => $healthItems) {
+                $blocks[] = $this->notionHeading(3, $label);
+                foreach ($healthItems as $healthItem) {
+                    $blocks[] = $this->notionBullet($this->notionText(ltrim($this->healthText($healthItem), '・')));
+                }
+            }
+        }
 
         $childLunches = $this->childLunchItems($items);
         $identityDocuments = $this->identityDocumentItems($items);
@@ -374,6 +402,86 @@ final class ReportBuilder
     private function birthdayItems(array $items): array
     {
         return array_values(array_filter($items, fn (array $item): bool => $this->isBirthday($item)));
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    private function healthGroups(array $items): array
+    {
+        $definitions = [
+            'weight' => '体重',
+            'steps' => '歩数',
+            'vital' => 'バイタル',
+        ];
+        $groups = [];
+        foreach ($definitions as $metric => $label) {
+            $matches = array_values(array_filter(
+                $items,
+                static fn (array $item): bool => ($item['health_metric'] ?? null) === $metric
+            ));
+            if ($matches === []) {
+                continue;
+            }
+
+            usort($matches, function (array $left, array $right): int {
+                return [
+                    $this->sortDateValue($right),
+                    (string) ($right['created_time'] ?? ''),
+                ] <=> [
+                    $this->sortDateValue($left),
+                    (string) ($left['created_time'] ?? ''),
+                ];
+            });
+            $groups[$label] = array_slice($matches, 0, 3);
+        }
+
+        return $groups;
+    }
+
+    /** @param array<string, mixed> $item */
+    private function healthText(array $item): string
+    {
+        $date = $this->healthDateText($item);
+        $numbers = is_array($item['numbers'] ?? null) ? $item['numbers'] : [];
+
+        return match ($item['health_metric'] ?? null) {
+            'weight' => sprintf('・%s｜%skg', $date, $this->healthNumber($numbers['weight'] ?? null)),
+            'steps' => sprintf('・%s｜%s歩', $date, $this->healthNumber($numbers['steps'] ?? null)),
+            'vital' => sprintf(
+                '・%s｜%s/%smmHg｜脈拍%s回/分',
+                $date,
+                $this->healthNumber($numbers['systolic'] ?? null),
+                $this->healthNumber($numbers['diastolic'] ?? null),
+                $this->healthNumber($numbers['pulse'] ?? null)
+            ),
+            default => sprintf('・%s', $date),
+        };
+    }
+
+    /** @param array<string, mixed> $item */
+    private function healthDateText(array $item): string
+    {
+        $date = $this->dateTimeFromItem($item, 'date_start');
+        if ($date === null) {
+            return '日付不明';
+        }
+
+        return $date->format(($item['date_has_time'] ?? false) === true ? 'n月j日 H:i' : 'n月j日');
+    }
+
+    private function healthNumber(mixed $value): string
+    {
+        if (!is_int($value) && !is_float($value)) {
+            return '-';
+        }
+
+        if ((float) $value === floor((float) $value)) {
+            return number_format((float) $value, 0, '.', ',');
+        }
+
+        return rtrim(rtrim(number_format((float) $value, 2, '.', ','), '0'), '.');
     }
 
     /** @param array<string, mixed> $item */

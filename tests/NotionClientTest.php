@@ -74,6 +74,49 @@ final class NotionClientTest extends TestCase
         self::assertSame('期限', $secondBody['filter']['and'][0]['property']);
     }
 
+    public function testQueriesOnlyRequestedLatestResultsWithSorts(): void
+    {
+        $history = [];
+        $mock = new MockHandler([
+            new Response(200, [], json_encode([
+                'results' => [
+                    ['id' => 'page-1'],
+                    ['id' => 'page-2'],
+                    ['id' => 'page-3'],
+                    ['id' => 'page-4'],
+                ],
+                'has_more' => true,
+                'next_cursor' => 'cursor-2',
+            ])),
+        ]);
+        $stack = HandlerStack::create($mock);
+        $stack->push(Middleware::history($history));
+        $httpClient = new Client([
+            'base_uri' => 'https://api.notion.com',
+            'handler' => $stack,
+        ]);
+        $client = new NotionClient('secret-token', '2026-03-11', 20, $httpClient);
+        $filter = [
+            'and' => [
+                ['property' => '日付', 'date' => ['on_or_before' => '2026-08-12']],
+                ['property' => '体重', 'number' => ['is_not_empty' => true]],
+            ],
+        ];
+        $sorts = [
+            ['property' => '日付', 'direction' => 'descending'],
+            ['timestamp' => 'created_time', 'direction' => 'descending'],
+        ];
+
+        $results = $client->queryDataSource('weight-source', [], $filter, $sorts, 3);
+
+        self::assertSame([['id' => 'page-1'], ['id' => 'page-2'], ['id' => 'page-3']], $results);
+        self::assertCount(1, $history);
+        $body = json_decode((string) $history[0]['request']->getBody(), true);
+        self::assertSame(3, $body['page_size']);
+        self::assertSame($filter, $body['filter']);
+        self::assertSame($sorts, $body['sorts']);
+    }
+
     public function testRejectsRepeatedPaginationCursor(): void
     {
         $history = [];

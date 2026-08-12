@@ -38,9 +38,22 @@ final class NotionClient implements NotionClientInterface
         $this->client = $client ?? new Client($options);
     }
 
-    public function queryDataSource(string $dataSourceId, array $filterPropertyIds = [], array $filter = []): array
-    {
+    public function queryDataSource(
+        string $dataSourceId,
+        array $filterPropertyIds = [],
+        array $filter = [],
+        array $sorts = [],
+        ?int $maxResults = null
+    ): array {
         $this->assertConfigured($dataSourceId);
+
+        if ($maxResults !== null && $maxResults <= 0) {
+            return [];
+        }
+
+        $resultLimit = $maxResults === null
+            ? self::MAX_QUERY_RESULTS
+            : min($maxResults, self::MAX_QUERY_RESULTS);
 
         $dataSourceId = trim($dataSourceId);
         $queryId = $dataSourceId;
@@ -59,9 +72,16 @@ final class NotionClient implements NotionClientInterface
                 ));
             }
 
-            $payload = ['page_size' => 100];
+            $payload = [
+                'page_size' => $maxResults === null
+                    ? 100
+                    : min(100, $resultLimit - count($results)),
+            ];
             if ($filter !== []) {
                 $payload['filter'] = $filter;
+            }
+            if ($sorts !== []) {
+                $payload['sorts'] = $sorts;
             }
 
             if ($nextCursor !== null) {
@@ -88,6 +108,10 @@ final class NotionClient implements NotionClientInterface
             $pageCount++;
             foreach ($response['results'] ?? [] as $page) {
                 if (is_array($page)) {
+                    if ($maxResults !== null && count($results) >= $resultLimit) {
+                        break;
+                    }
+
                     if (count($results) >= self::MAX_QUERY_RESULTS) {
                         throw new NotionApiException(sprintf(
                             'Notion API pagination exceeded the maximum of %d results for data source "%s".',
@@ -98,6 +122,11 @@ final class NotionClient implements NotionClientInterface
 
                     $results[] = $page;
                 }
+            }
+
+            if ($maxResults !== null && count($results) >= $resultLimit) {
+                $nextCursor = null;
+                continue;
             }
 
             $nextCursor = ($response['has_more'] ?? false) ? ($response['next_cursor'] ?? null) : null;

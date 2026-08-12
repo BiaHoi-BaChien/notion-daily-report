@@ -176,6 +176,98 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringContainsString('Meeting prep', $report);
     }
 
+    public function testQueriesAndRendersAvailableHealthSourcesWhileSkippingFailures(): void
+    {
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $slack = new StubSlackNotifier();
+        $openAI = new StubOpenAIClient('健康データを確認しました。');
+        $config = $this->config();
+        $config['openai'] = ['enabled' => true];
+        $config['sources'][] = [
+            'name' => '体重',
+            'role' => '直近の体重記録の確認',
+            'data_source_id' => 'weight-source',
+            'date_property' => '日付',
+            'status_property' => '',
+            'lookback_days' => 0,
+            'lookahead_days' => 0,
+            'exclude_statuses' => [],
+            'health_metric' => 'weight',
+            'number_properties' => ['weight' => '体重'],
+            'latest_results' => 3,
+        ];
+        $config['sources'][] = [
+            'name' => '歩数',
+            'role' => '直近の歩数記録の確認',
+            'data_source_id' => 'steps-source',
+            'date_property' => '日付',
+            'status_property' => '',
+            'lookback_days' => 0,
+            'lookahead_days' => 0,
+            'exclude_statuses' => [],
+            'health_metric' => 'steps',
+            'number_properties' => ['steps' => '歩数'],
+            'latest_results' => 3,
+        ];
+        $config['sources'][] = [
+            'name' => 'バイタル',
+            'role' => '直近のバイタル記録の確認',
+            'data_source_id' => 'vital-source',
+            'date_property' => '日付',
+            'status_property' => '',
+            'lookback_days' => 0,
+            'lookahead_days' => 0,
+            'exclude_statuses' => [],
+            'health_metric' => 'vital',
+            'number_properties' => ['systolic' => '収縮期', 'diastolic' => '拡張期', 'pulse' => '脈拍'],
+            'latest_results' => 3,
+        ];
+        $notion = new StubNotionClient([
+            'source-id' => [$this->page('Today task', '2026-08-12', '未着手')],
+            'weight-source' => [
+                $this->healthPage('2026-08-11T07:16:00+07:00', ['体重' => 73.25]),
+                $this->healthPage('2026-08-10T07:03:00+07:00', ['体重' => 73.2]),
+                $this->healthPage('2026-08-09T08:32:00+07:00', ['体重' => 73.5]),
+                $this->healthPage('2026-08-08T07:00:00+07:00', ['体重' => 74]),
+            ],
+            'steps-source' => [],
+            'vital-source' => new RuntimeException('Vital source failed'),
+        ]);
+
+        $command = new DailyReportCommand(
+            $config,
+            $notion,
+            new PropertyExtractor($timezone),
+            new DateFilter($timezone),
+            new ReportBuilder($timezone),
+            new Logger($logPath, $timezone),
+            $timezone,
+            false,
+            $slack,
+            $openAI
+        );
+
+        self::assertSame(0, $command->run(['daily_report.php', '--date=2026-08-12']));
+        $report = (string) $slack->sentText;
+        self::assertStringContainsString('🏥 健康', $report);
+        self::assertStringContainsString('8月11日 07:16｜73.25kg', $report);
+        self::assertStringNotContainsString("\n歩数\n", str_replace("\r\n", "\n", $report));
+        self::assertStringNotContainsString("\nバイタル\n", str_replace("\r\n", "\n", $report));
+        self::assertStringContainsString('8月11日 07:16｜73.25kg', $openAI->receivedSchedule);
+
+        $weightQuery = array_values(array_filter(
+            $notion->queries,
+            static fn (array $query): bool => $query['data_source_id'] === 'weight-source'
+        ))[0];
+        self::assertSame(3, $weightQuery['max_results']);
+        self::assertSame('2026-08-12', $weightQuery['filter']['and'][0]['date']['on_or_before']);
+        self::assertSame(['is_not_empty' => true], $weightQuery['filter']['and'][1]['number']);
+        self::assertSame('descending', $weightQuery['sorts'][0]['direction']);
+        self::assertSame('created_time', $weightQuery['sorts'][1]['timestamp']);
+        self::assertStringContainsString('source_processing_failed', (string) file_get_contents($logPath));
+    }
+
     public function testContinuesWhenOneSourceFails(): void
     {
         $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
@@ -504,10 +596,75 @@ final class DailyReportCommandTest extends TestCase
         $birthday['extra'] = ['birthdate' => '1990-07-17', 'age' => '36'];
 
         $report = $builder->renderSchedule($builder->classifyAndSort([$birthday], $today), $today);
+        $normalizedReport = str_replace(["\r\n", "\r"], "\n", $report);
 
         self::assertStringContainsString('💡 その他トピックス', $report);
-        self::assertStringContainsString("もうすぐ誕生日\n・Nguyen Van A｜1990年07月17日｜36歳", $report);
+        self::assertStringNotContainsString('🏥 健康', $report);
+        self::assertStringContainsString("もうすぐ誕生日\n・Nguyen Van A｜1990年07月17日｜36歳", $normalizedReport);
         self::assertSame(1, substr_count($report, 'Nguyen Van A'));
+    }
+
+    public function testRendersLatestHealthMeasurementsBeforeOtherTopicsInAllFormats(): void
+    {
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $today = new DateTimeImmutable('2026-08-12', $timezone);
+        $builder = new ReportBuilder($timezone);
+
+        $weights = [];
+        foreach ([
+            ['2026-08-08T07:00:00+07:00', 74.0],
+            ['2026-08-09T08:32:00+07:00', 73.5],
+            ['2026-08-10T07:03:00+07:00', 73.2],
+            ['2026-08-11T07:16:00+07:00', 73.25],
+        ] as [$date, $value]) {
+            $item = $this->extractedItem('体重', substr($date, 0, 10), '体重', '体重確認', $date);
+            $item['health_metric'] = 'weight';
+            $item['numbers'] = ['weight' => $value];
+            $weights[] = $item;
+        }
+
+        $steps = $this->extractedItem('歩数', '2026-08-11', '歩数', '歩数確認', '2026-08-11T00:00:00+07:00');
+        $steps['health_metric'] = 'steps';
+        $steps['numbers'] = ['steps' => 4275];
+
+        $vitalMorning = $this->extractedItem('バイタル', '2026-08-11', 'バイタル', 'バイタル確認', '2026-08-11T07:13:00+07:00');
+        $vitalMorning['health_metric'] = 'vital';
+        $vitalMorning['numbers'] = ['systolic' => 118, 'diastolic' => 78, 'pulse' => 0];
+        $vitalNight = $this->extractedItem('バイタル', '2026-08-11', 'バイタル', 'バイタル確認', '2026-08-11T21:11:00+07:00');
+        $vitalNight['health_metric'] = 'vital';
+        $vitalNight['numbers'] = ['systolic' => 120, 'diastolic' => 80, 'pulse' => 70];
+
+        $birthday = $this->extractedItem('Nguyen Van A', '2026-08-13', '誕生日', '誕生日確認', '2026-08-13');
+        $birthday['extra'] = ['birthdate' => '1990-08-13', 'age' => '36'];
+        $items = $builder->classifyAndSort([
+            ...$weights,
+            $steps,
+            $vitalMorning,
+            $vitalNight,
+            $birthday,
+        ], $today);
+
+        $reports = [
+            $builder->renderSchedule($items, $today),
+            $builder->renderSchedule($items, $today, ReportBuilder::FORMAT_SLACK),
+            $builder->renderSchedule($items, $today, ReportBuilder::FORMAT_HTML),
+            json_encode(
+                $builder->renderNotionBlocks(null, $items, $today),
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+            ),
+        ];
+
+        foreach ($reports as $report) {
+            self::assertStringContainsString('🏥 健康', $report);
+            self::assertStringContainsString('8月11日 07:16｜73.25kg', $report);
+            self::assertStringContainsString('8月10日 07:03｜73.2kg', $report);
+            self::assertStringContainsString('8月9日 08:32｜73.5kg', $report);
+            self::assertStringNotContainsString('8月8日 07:00｜74kg', $report);
+            self::assertStringContainsString('8月11日 00:00｜4,275歩', $report);
+            self::assertStringContainsString('8月11日 21:11｜120/80mmHg｜脈拍70回/分', $report);
+            self::assertStringContainsString('8月11日 07:13｜118/78mmHg｜脈拍0回/分', $report);
+            self::assertLessThan(strpos($report, '💡 その他トピックス'), strpos($report, '🏥 健康'));
+        }
     }
 
     public function testRendersNotionPageLinksForSlackAndHtmlMail(): void
@@ -1448,6 +1605,33 @@ final class DailyReportCommandTest extends TestCase
     }
 
     /**
+     * @param array<string, int|float|null> $numbers
+     * @return array<string, mixed>
+     */
+    private function healthPage(string $date, array $numbers): array
+    {
+        $properties = [
+            '日付' => [
+                'type' => 'date',
+                'date' => ['start' => $date],
+            ],
+        ];
+        foreach ($numbers as $name => $value) {
+            $properties[$name] = [
+                'type' => 'number',
+                'number' => $value,
+            ];
+        }
+
+        return [
+            'id' => 'health-' . md5($date . json_encode($numbers)),
+            'created_time' => $date,
+            'last_edited_time' => $date,
+            'properties' => $properties,
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function pageWithProject(string $title, string $date, ?string $status, string $project): array
@@ -1677,6 +1861,9 @@ final class StubNotionClient implements NotionClientInterface
      */
     public array $createdPages = [];
 
+    /** @var array<int, array<string, mixed>> */
+    public array $queries = [];
+
     /**
      * @param array<int, array<string, mixed>> $pages
      * @param array<string, array<string, mixed>> $relatedPages
@@ -1689,10 +1876,23 @@ final class StubNotionClient implements NotionClientInterface
     {
     }
 
-    public function queryDataSource(string $dataSourceId, array $filterPropertyIds = [], array $filter = []): array
-    {
+    public function queryDataSource(
+        string $dataSourceId,
+        array $filterPropertyIds = [],
+        array $filter = [],
+        array $sorts = [],
+        ?int $maxResults = null
+    ): array {
+        $this->queries[] = [
+            'data_source_id' => $dataSourceId,
+            'filter_property_ids' => $filterPropertyIds,
+            'filter' => $filter,
+            'sorts' => $sorts,
+            'max_results' => $maxResults,
+        ];
+
         if (array_is_list($this->pages)) {
-            return $this->pages;
+            return $maxResults === null ? $this->pages : array_slice($this->pages, 0, $maxResults);
         }
 
         $result = $this->pages[$dataSourceId] ?? [];
@@ -1700,7 +1900,7 @@ final class StubNotionClient implements NotionClientInterface
             throw $result;
         }
 
-        return $result;
+        return $maxResults === null ? $result : array_slice($result, 0, $maxResults);
     }
 
     public function retrievePage(string $pageId): array

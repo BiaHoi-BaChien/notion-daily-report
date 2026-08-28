@@ -698,7 +698,7 @@ final class DailyReportCommandTest extends TestCase
         $today = new DateTimeImmutable('2026-07-20', $timezone);
         $builder = new ReportBuilder($timezone);
         $vacation = $this->extractedItem('夏休み', '2026-07-18', 'カレンダー', '今日以降1週間の予定の確認', '2026-07-18');
-        $vacation['date_end'] = '2026-08-17T00:00:00+07:00';
+        $vacation['date_end'] = '2026-07-27T00:00:00+07:00';
         $vacation['report_window_end'] = '2026-07-27';
 
         $items = $builder->classifyAndSort([$vacation], $today);
@@ -714,9 +714,9 @@ final class DailyReportCommandTest extends TestCase
             $htmlReport,
             json_encode($notionBlocks, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
         ] as $report) {
-            self::assertSame(1, substr_count($report, '夏休み（3日目／8月17日まで）'));
-            self::assertSame(1, substr_count($report, '夏休み（4日目／8月17日まで）'));
-            self::assertSame(1, substr_count($report, '夏休み（10日目／8月17日まで）'));
+            self::assertSame(1, substr_count($report, '夏休み（3日目／7月27日まで）'));
+            self::assertSame(1, substr_count($report, '夏休み（4日目／7月27日まで）'));
+            self::assertSame(1, substr_count($report, '夏休み（最終日／7月27日まで）'));
             self::assertStringNotContainsString('07/18（土）', $report);
         }
     }

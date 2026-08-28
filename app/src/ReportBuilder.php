@@ -949,7 +949,9 @@ final class ReportBuilder
             return null;
         }
 
-        return sprintf('%d日目／%sまで', $start->diff($today)->days + 1, $end->format('n月j日'));
+        $progress = $today == $end ? '最終日' : sprintf('%d日目', $start->diff($today)->days + 1);
+
+        return sprintf('%s／%sまで', $progress, $end->format('n月j日'));
     }
 
     /**

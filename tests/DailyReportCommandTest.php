@@ -14,14 +14,49 @@ use App\OpenAIClientInterface;
 use App\MailNotifierInterface;
 use App\PropertyExtractor;
 use App\ReportBuilder;
+use App\SlackNotifier;
 use App\SlackNotifierInterface;
 use DateTimeImmutable;
 use DateTimeZone;
+use GuzzleHttp\Client;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Psr7\Response;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
 final class DailyReportCommandTest extends TestCase
 {
+    public function testDeadlineOverviewDistinguishesEmptyFailedAndPartiallyParsedSources(): void
+    {
+        $tz = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $task = $this->projectTaskPage('期限タスク', '2026-09-11', 'Doing', '案件');
+        $broken = $task;
+        unset($broken['properties']['By when']);
+        foreach ([
+            [[], '本日期限：なし', false],
+            [new RuntimeException('Notion unavailable'), '本日期限：取得不可', false],
+            [[$task], '本日期限：1件', true],
+            [[$task, $broken], '本日期限：取得不可（確認済み1件）', true],
+        ] as [$pages, $expected, $hasTasks]) {
+            $config = $this->config();
+            $config['sources'][] = [
+                'name' => '各案件のタスク', 'role' => '期限', 'data_source_id' => 'project-tasks',
+                'date_property' => 'By when', 'status_property' => 'Status',
+                'lookback_days' => 0, 'lookahead_days' => 5, 'exclude_statuses' => ['Release', 'Archived'],
+            ];
+            $notion = new StubNotionClient(['source-id' => [$this->page('予定', '2026-09-11', '未着手')], 'project-tasks' => $pages]);
+            $slack = new StubSlackNotifier();
+            $mail = new StubMailNotifier();
+            $command = new DailyReportCommand($config, $notion, new PropertyExtractor($tz), new DateFilter($tz), new ReportBuilder($tz), new Logger(sys_get_temp_dir() . '/brief-deadlines.log', $tz), $tz, false, $slack, null, $mail);
+            self::assertSame(0, $command->run(['daily_report.php', '--date=2026-09-11']));
+            foreach ([$slack->sentText, $mail->sentBody, $mail->sentPlainBody] as $report) {
+                self::assertStringContainsString($expected, $report);
+                self::assertSame($hasTasks, str_contains($report, '⚠ 本日期限のタスク'));
+            }
+        }
+    }
+
     public function testRunsCliReportWithStubbedNotionClient(): void
     {
         $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
@@ -108,7 +143,7 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringContainsString('08/04（火）', $report);
         self::assertStringContainsString('夏休み（18日目／8月17日まで）', $report);
         self::assertStringNotContainsString('07/18（土）', $report);
-        self::assertSame(8, substr_count($report, '夏休み（'));
+        self::assertSame(9, substr_count($report, '夏休み（')); // Includes the overview.
         self::assertStringContainsString(
             '"date_filter":{"property":"Date","on_or_before":"2026-08-04"}',
             (string) file_get_contents($logPath)
@@ -195,7 +230,7 @@ final class DailyReportCommandTest extends TestCase
             'exclude_statuses' => [],
             'health_metric' => 'weight',
             'number_properties' => ['weight' => '体重'],
-            'latest_results' => 3,
+            'latest_results' => 1,
         ];
         $config['sources'][] = [
             'name' => '歩数',
@@ -208,7 +243,7 @@ final class DailyReportCommandTest extends TestCase
             'exclude_statuses' => [],
             'health_metric' => 'steps',
             'number_properties' => ['steps' => '歩数'],
-            'latest_results' => 3,
+            'latest_results' => 1,
         ];
         $config['sources'][] = [
             'name' => 'バイタル',
@@ -221,7 +256,7 @@ final class DailyReportCommandTest extends TestCase
             'exclude_statuses' => [],
             'health_metric' => 'vital',
             'number_properties' => ['systolic' => '収縮期', 'diastolic' => '拡張期', 'pulse' => '脈拍'],
-            'latest_results' => 3,
+            'latest_results' => 1,
         ];
         $notion = new StubNotionClient([
             'source-id' => [$this->page('Today task', '2026-08-12', '未着手')],
@@ -254,13 +289,14 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringContainsString('8月11日 07:16｜73.25kg', $report);
         self::assertStringNotContainsString("\n歩数\n", str_replace("\r\n", "\n", $report));
         self::assertStringNotContainsString("\nバイタル\n", str_replace("\r\n", "\n", $report));
-        self::assertStringContainsString('8月11日 07:16｜73.25kg', $openAI->receivedSchedule);
+        self::assertStringNotContainsString('73.25', $openAI->receivedSchedule);
+        self::assertStringNotContainsString('健康', $openAI->receivedSchedule);
 
         $weightQuery = array_values(array_filter(
             $notion->queries,
             static fn (array $query): bool => $query['data_source_id'] === 'weight-source'
         ))[0];
-        self::assertSame(3, $weightQuery['max_results']);
+        self::assertSame(1, $weightQuery['max_results']);
         self::assertSame('2026-08-12', $weightQuery['filter']['and'][0]['date']['on_or_before']);
         self::assertSame(['is_not_empty' => true], $weightQuery['filter']['and'][1]['number']);
         self::assertSame('descending', $weightQuery['sorts'][0]['direction']);
@@ -657,12 +693,12 @@ final class DailyReportCommandTest extends TestCase
         foreach ($reports as $report) {
             self::assertStringContainsString('🏥 健康', $report);
             self::assertStringContainsString('8月11日 07:16｜73.25kg', $report);
-            self::assertStringContainsString('8月10日 07:03｜73.2kg', $report);
-            self::assertStringContainsString('8月9日 08:32｜73.5kg', $report);
+            self::assertStringNotContainsString('8月10日 07:03｜73.2kg', $report);
+            self::assertStringNotContainsString('8月9日 08:32｜73.5kg', $report);
             self::assertStringNotContainsString('8月8日 07:00｜74kg', $report);
-            self::assertStringContainsString('8月11日 00:00｜4,275歩', $report);
+            self::assertStringContainsString('8月11日｜4,275歩', $report);
             self::assertStringContainsString('8月11日 21:11｜120/80mmHg｜脈拍70回/分', $report);
-            self::assertStringContainsString('8月11日 07:13｜118/78mmHg｜脈拍0回/分', $report);
+            self::assertStringNotContainsString('8月11日 07:13｜118/78mmHg｜脈拍0回/分', $report);
             self::assertLessThan(strpos($report, '💡 その他トピックス'), strpos($report, '🏥 健康'));
         }
     }
@@ -714,7 +750,7 @@ final class DailyReportCommandTest extends TestCase
             $htmlReport,
             json_encode($notionBlocks, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
         ] as $report) {
-            self::assertSame(1, substr_count($report, '夏休み（3日目／7月27日まで）'));
+            self::assertSame(2, substr_count($report, '夏休み（3日目／7月27日まで）'));
             self::assertSame(1, substr_count($report, '夏休み（4日目／7月27日まで）'));
             self::assertSame(1, substr_count($report, '夏休み（最終日／7月27日まで）'));
             self::assertStringNotContainsString('07/18（土）', $report);
@@ -888,7 +924,8 @@ final class DailyReportCommandTest extends TestCase
             return null;
         };
 
-        foreach (['⏰ 明日の時間付き予定', '⚠️ 本日期限のタスク', '📌 近日確認'] as $heading) {
+        self::assertNull($nextBlockAfterHeading($blocks, '⚠️ 本日期限のタスク'));
+        foreach (['⏰ 明日の時間付き予定', '📌 近日確認'] as $heading) {
             $block = $nextBlockAfterHeading($blocks, $heading);
             self::assertSame('bulleted_list_item', $block['type'] ?? null);
             self::assertSame('該当なし', $block['bulleted_list_item']['rich_text'][0]['text']['content'] ?? null);
@@ -1017,8 +1054,8 @@ final class DailyReportCommandTest extends TestCase
         self::assertSame('Notion Daily Report 2026-04-16', $notion->createdPages[0]['properties']['レポート名']['title'][0]['text']['content']);
         self::assertSame('2026-04-16', $notion->createdPages[0]['properties']['対象日']['date']['start']);
         self::assertArrayHasKey('Run ID', $notion->createdPages[0]['properties']);
-        self::assertSame('callout', $notion->createdPages[0]['children'][0]['type']);
-        self::assertSame('🤖', $notion->createdPages[0]['children'][0]['callout']['icon']['emoji']);
+        self::assertSame('heading_2', $notion->createdPages[0]['children'][0]['type']);
+        self::assertSame('今日の要点', $notion->createdPages[0]['children'][0]['heading_2']['rich_text'][0]['text']['content']);
 
         $log = (string) file_get_contents($logPath);
         self::assertStringContainsString('notion_report_created', $log);
@@ -1208,6 +1245,10 @@ final class DailyReportCommandTest extends TestCase
         $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
         $mail = new StubMailNotifier();
+        $webhookUrl = 'https://hooks.slack.test/services/test-workspace/test-app/test-secret';
+        $client = new Client(['handler' => HandlerStack::create(new MockHandler([
+            new Response(500, [], $webhookUrl),
+        ]))]);
 
         $command = new DailyReportCommand(
             $this->config(),
@@ -1220,7 +1261,7 @@ final class DailyReportCommandTest extends TestCase
             new Logger($logPath, $timezone),
             $timezone,
             false,
-            new FailingSlackNotifier(),
+            new SlackNotifier($webhookUrl, 10, $client),
             null,
             $mail
         );
@@ -1239,6 +1280,9 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringContainsString('mail_notification_sent', $log);
         self::assertStringContainsString('"slack_status":"failed"', $log);
         self::assertStringContainsString('"mail_status":"sent"', $log);
+        self::assertStringContainsString('Slack notification failed (HTTP 500).', $log);
+        self::assertStringNotContainsString('test-secret', $log);
+        self::assertStringNotContainsString('hooks.slack.test', $log);
     }
 
     public function testCompletesWhenMailNotificationFails(): void
@@ -1908,6 +1952,13 @@ final class StubNotionClient implements NotionClientInterface
         return $this->relatedPages[$pageId] ?? [];
     }
 
+    public array $blockChildren = [];
+
+    public function retrieveBlockChildren(string $blockId): array
+    {
+        return $this->blockChildren[$blockId] ?? [];
+    }
+
     public function createPage(string $dataSourceId, array $properties, array $children = []): array
     {
         if ($this->createException !== null) {
@@ -1942,19 +1993,6 @@ final class StubSlackNotifier implements SlackNotifierInterface
     }
 }
 
-final class FailingSlackNotifier implements SlackNotifierInterface
-{
-    public function isConfigured(): bool
-    {
-        return true;
-    }
-
-    public function send(string $text): void
-    {
-        throw new RuntimeException('Slack is unavailable.');
-    }
-}
-
 final class StubOpenAIClient implements OpenAIClientInterface
 {
     public string $receivedSchedule = '';
@@ -1971,7 +2009,7 @@ final class StubOpenAIClient implements OpenAIClientInterface
     public function summarize(string $schedule): string
     {
         $this->receivedSchedule = $schedule;
-        return $this->summary;
+        return json_encode(['highlights' => array_slice(explode(PHP_EOL, $this->summary), 0, 2), 'meeting_points' => []], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
     }
 }
 

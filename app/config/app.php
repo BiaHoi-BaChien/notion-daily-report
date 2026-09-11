@@ -94,10 +94,11 @@ $baseSources = [
         'lookahead_days' => 0,
         'exclude_statuses' => [],
         'health_metric' => 'weight',
+        'detail_url' => trim((string) $env('NOTION_WEIGHT_DETAIL_URL', '')),
         'number_properties' => [
             'weight' => trim((string) $env('NOTION_WEIGHT_VALUE_PROPERTY', '体重')),
         ],
-        'latest_results' => 3,
+        'latest_results' => 1,
     ],
     [
         'name' => '歩数',
@@ -109,10 +110,11 @@ $baseSources = [
         'lookahead_days' => 0,
         'exclude_statuses' => [],
         'health_metric' => 'steps',
+        'detail_url' => trim((string) $env('NOTION_STEPS_DETAIL_URL', '')),
         'number_properties' => [
             'steps' => trim((string) $env('NOTION_STEPS_VALUE_PROPERTY', '歩数')),
         ],
-        'latest_results' => 3,
+        'latest_results' => 1,
     ],
     [
         'name' => 'バイタル',
@@ -124,12 +126,13 @@ $baseSources = [
         'lookahead_days' => 0,
         'exclude_statuses' => [],
         'health_metric' => 'vital',
+        'detail_url' => trim((string) $env('NOTION_VITAL_DETAIL_URL', '')),
         'number_properties' => [
             'systolic' => trim((string) $env('NOTION_VITAL_SYSTOLIC_PROPERTY', '収縮期')),
             'diastolic' => trim((string) $env('NOTION_VITAL_DIASTOLIC_PROPERTY', '拡張期')),
             'pulse' => trim((string) $env('NOTION_VITAL_PULSE_PROPERTY', '脈拍')),
         ],
-        'latest_results' => 3,
+        'latest_results' => 1,
     ],
 ];
 
@@ -198,4 +201,20 @@ return [
         'to' => \App\MailNotifier::parseRecipients((string) $env('MAIL_TO', '')),
     ],
     'sources' => $sources,
+    'meeting_notes' => [
+        'name' => '議事録',
+        'role' => '今日の案件の決定事項とフォロー事項',
+        'data_source_id' => trim((string) $env('NOTION_MEETING_DATA_SOURCE_ID', '')),
+        'title_property' => trim((string) $env('NOTION_MEETING_TITLE_PROPERTY', 'Name')),
+        'date_property' => trim((string) $env('NOTION_MEETING_CREATED_PROPERTY', 'Created')),
+        'project_property' => trim((string) $env('NOTION_MEETING_PROJECT_PROPERTY', '関連Project')),
+    ],
+    'reading' => [
+        'name' => '読書',
+        'role' => '今日の小さな楽しみ',
+        'data_source_id' => trim((string) $env('NOTION_READING_DATA_SOURCE_ID', '')),
+        'title_property' => trim((string) $env('NOTION_READING_TITLE_PROPERTY', 'タイトル')),
+        'date_property' => trim((string) $env('NOTION_READING_DATE_PROPERTY', '購入日')),
+        'status_property' => trim((string) $env('NOTION_READING_STATUS_PROPERTY', 'ステータス')),
+    ],
 ];

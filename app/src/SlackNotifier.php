@@ -7,7 +7,8 @@ namespace App;
 use App\Exception\SlackNotificationException;
 use GuzzleHttp\Client;
 use GuzzleHttp\ClientInterface;
-use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\Exception\RequestException;
+use Throwable;
 
 final class SlackNotifier implements SlackNotifierInterface
 {
@@ -47,8 +48,12 @@ final class SlackNotifier implements SlackNotifierInterface
                     'text' => $text,
                 ],
             ]);
-        } catch (GuzzleException $exception) {
-            throw new SlackNotificationException('Slack notification failed: ' . $exception->getMessage(), 0, $exception);
+        } catch (Throwable $exception) {
+            $status = $exception instanceof RequestException ? $exception->getResponse()?->getStatusCode() : null;
+            // HTTP and URI parsing exceptions can retain webhook credentials, including in previous exceptions.
+            throw new SlackNotificationException($status === null
+                ? 'Slack notification failed.'
+                : sprintf('Slack notification failed (HTTP %d).', $status));
         }
     }
 }

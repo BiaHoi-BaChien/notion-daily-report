@@ -25,6 +25,9 @@ interface NotionClientInterface
      */
     public function retrievePage(string $pageId): array;
 
+    /** @return array<int, array<string, mixed>> Flattened page blocks, including nested content. */
+    public function retrieveBlockChildren(string $blockId): array;
+
     /**
      * @param array<string, mixed> $properties
      * @param array<int, array<string, mixed>> $children

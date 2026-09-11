@@ -79,7 +79,7 @@ final class ConfigTest extends TestCase
                 ['systolic' => '上', 'diastolic' => '下', 'pulse' => '心拍'],
                 $config['sources'][2]['number_properties']
             );
-            self::assertSame([3, 3, 3], array_column($config['sources'], 'latest_results'));
+            self::assertSame([1, 1, 1], array_column($config['sources'], 'latest_results'));
         } finally {
             foreach (array_keys($values) as $key) {
                 unset($_ENV[$key]);

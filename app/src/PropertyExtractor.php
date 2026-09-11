@@ -29,6 +29,7 @@ final class PropertyExtractor
         $dateInfo = $this->extractDateInfo($properties, (string) $source['date_property']);
 
         return [
+            'id' => $page['id'] ?? null,
             'source_name' => (string) $source['name'],
             'source_role' => (string) $source['role'],
             'title' => $this->extractTitle($properties, $source['title_property'] ?? null),
@@ -44,6 +45,7 @@ final class PropertyExtractor
             'extra' => $this->extractExtraProperties($properties, $source['extra_properties'] ?? []),
             'numbers' => $this->extractNumberProperties($properties, $source['number_properties'] ?? []),
             'health_metric' => $source['health_metric'] ?? null,
+            'detail_url' => $source['detail_url'] ?? null,
             'classification' => null,
             'url' => $page['url'] ?? null,
             'created_time' => $page['created_time'] ?? null,
@@ -144,6 +146,9 @@ final class PropertyExtractor
     private function extractDateInfo(array $properties, string $propertyName): array
     {
         $property = $this->requiredProperty($properties, $propertyName);
+        if (($property['type'] ?? null) === 'created_time') {
+            $property = ['type' => 'date', 'date' => ['start' => $property['created_time'] ?? null]];
+        }
         if (($property['type'] ?? null) !== 'date') {
             throw new PropertyExtractionException(sprintf(
                 'Property "%s" must be a Notion date property.',

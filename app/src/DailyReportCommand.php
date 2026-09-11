@@ -54,6 +54,7 @@ final class DailyReportCommand
             $today = $this->resolveToday($argv);
             $sources = $this->enabledSources();
             $items = [];
+            $sourceStatus = [];
             $successfulSources = 0;
             $failedSources = 0;
             $fetchedCount = 0;
@@ -80,6 +81,8 @@ final class DailyReportCommand
                     $extractionErrorCount += $sourceItems['extraction_error_count'];
                     $filteredBeforeClassificationCount += $sourceItems['filtered_count'];
                     $successfulSources++;
+                    $name = (string) $source['name'];
+                    $sourceStatus[$name] = ($sourceStatus[$name] ?? true) && $sourceItems['extraction_error_count'] === 0;
 
                     $this->logger->info('source_processing_complete', [
                         'run_id' => $runId,
@@ -93,6 +96,7 @@ final class DailyReportCommand
                     ]);
                 } catch (Throwable $exception) {
                     $failedSources++;
+                    $sourceStatus[(string) $source['name']] = false;
                     $this->logger->error('source_processing_failed', [
                         'run_id' => $runId,
                         'source' => $source['name'] ?? null,
@@ -109,10 +113,16 @@ final class DailyReportCommand
             }
 
             $classified = $this->reportBuilder->classifyAndSort($items, $today);
-            $schedule = $this->reportBuilder->renderSchedule($classified, $today);
-            $slackSchedule = $this->reportBuilder->renderSchedule($classified, $today, ReportBuilder::FORMAT_SLACK);
-            $mailHtmlSchedule = $this->reportBuilder->renderSchedule($classified, $today, ReportBuilder::FORMAT_HTML);
-            $apiSendCount = $this->shouldSummarizeWithOpenAI($classified) ? 1 : 0;
+            $contextBuilder = new BriefContextBuilder($this->notionClient, $this->propertyExtractor, $this->timezone, $this->logger);
+            $brief = $contextBuilder->load($this->config, $classified, $today, $runId);
+            $brief['source_status'] = $sourceStatus + ['各案件のタスク' => false];
+            $aiItems = array_values(array_filter($classified, static fn (array $item): bool => ($item['health_metric'] ?? null) === null));
+            $aiInput = json_encode([
+                'report_date' => $today->format('Y-m-d'),
+                'schedule' => $this->reportBuilder->renderSchedule($aiItems, $today, ReportBuilder::FORMAT_TEXT, ['source_status' => $brief['source_status']]),
+                'meeting_notes' => array_values(array_map(static fn (array $note): array => array_diff_key($note, ['url' => true]), $brief['meetings'])),
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            $apiSendCount = $this->shouldSummarizeWithOpenAI($aiItems) ? 1 : 0;
 
             $this->logger->info('daily_report_filtered', [
                 'run_id' => $runId,
@@ -128,11 +138,12 @@ final class DailyReportCommand
                 'api_send_count' => $apiSendCount,
             ]);
 
-            $comment = $this->buildNotificationComment($classified, $schedule, $runId);
-            $report = $this->reportBuilder->renderReport($comment, $schedule);
-            $slackReport = $this->reportBuilder->renderReport($comment, $slackSchedule, ReportBuilder::FORMAT_SLACK);
-            $mailHtmlReport = $this->reportBuilder->renderReport($comment, $mailHtmlSchedule, ReportBuilder::FORMAT_HTML);
-            $notionReportResult = $this->saveNotionReport($comment, $classified, $today, $runId);
+            $comment = $this->buildNotificationComment($aiItems, $aiInput, $runId);
+            $brief = $contextBuilder->applySummary($comment, $brief, $runId);
+            $report = $this->reportBuilder->renderSchedule($classified, $today, ReportBuilder::FORMAT_TEXT, $brief);
+            $slackReport = $this->reportBuilder->renderSchedule($classified, $today, ReportBuilder::FORMAT_SLACK, $brief);
+            $mailHtmlReport = $this->reportBuilder->renderSchedule($classified, $today, ReportBuilder::FORMAT_HTML, $brief);
+            $notionReportResult = $this->saveNotionReport(null, $classified, $today, $runId, $brief);
             $slackStatus = $this->sendSlackReport($slackReport, $runId);
             $mailStatus = $this->sendMailReport($mailHtmlReport, $report, $today, $runId);
 
@@ -632,7 +643,7 @@ final class DailyReportCommand
      * @param array<int, array<string, mixed>> $items
      * @return array{status: string, page_id: ?string, page_url: ?string}
      */
-    private function saveNotionReport(?string $comment, array $items, DateTimeImmutable $today, string $runId): array
+    private function saveNotionReport(?string $comment, array $items, DateTimeImmutable $today, string $runId, array $brief = []): array
     {
         $reportConfig = $this->config['notion_report'] ?? [];
         if (!is_array($reportConfig) || ($reportConfig['enabled'] ?? false) !== true) {
@@ -654,7 +665,7 @@ final class DailyReportCommand
 
         $title = sprintf('Notion Daily Report %s', $today->setTimezone($this->timezone)->format('Y-m-d'));
         $properties = $this->notionReportProperties($reportConfig, $title, $today, $runId);
-        $children = $this->reportBuilder->renderNotionBlocks($comment, $items, $today);
+        $children = $this->reportBuilder->renderNotionBlocks($comment, $items, $today, $brief);
 
         try {
             $page = $this->notionClient->createPage($dataSourceId, $properties, $children);

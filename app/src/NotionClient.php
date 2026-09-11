@@ -172,6 +172,69 @@ final class NotionClient implements NotionClientInterface
         return $this->decodeResponse($response);
     }
 
+    /** @return array<int, array<string, mixed>> */
+    public function retrieveBlockChildren(string $blockId): array
+    {
+        $this->assertConfigured($blockId);
+        $visited = [];
+        $requests = 0;
+        return $this->readBlockChildren($blockId, $visited, $requests);
+    }
+
+    private function readBlockChildren(string $blockId, array &$visited, int &$requests): array
+    {
+        if (isset($visited[$blockId])) {
+            throw new NotionApiException('Repeated block while reading page content.');
+        }
+        $visited[$blockId] = true;
+        $blocks = [];
+        $cursor = null;
+        $cursors = [];
+        do {
+            if (++$requests > self::MAX_QUERY_PAGES) {
+                throw new NotionApiException('Page content exceeded the request limit.');
+            }
+            $query = ['page_size' => 100];
+            if ($cursor !== null) {
+                $query['start_cursor'] = $cursor;
+            }
+            try {
+                $response = $this->client->request('GET', sprintf('/v1/blocks/%s/children', rawurlencode($blockId)), [
+                    'headers' => $this->requestHeaders(),
+                    'query' => $query,
+                ]);
+                $page = $this->decodeResponse($response);
+            } catch (RequestException $exception) {
+                throw $this->createRequestException('read block children', $blockId, $exception);
+            } catch (GuzzleException $exception) {
+                throw new NotionApiException('Notion page content request failed.', 0, $exception);
+            }
+            if (!is_array($page['results'] ?? null)) {
+                throw new NotionApiException('Invalid page content response.');
+            }
+            foreach ($page['results'] as $block) {
+                if (!is_array($block) || !is_string($block['id'] ?? null)) {
+                    throw new NotionApiException('Invalid page content block.');
+                }
+                if (in_array($block['type'] ?? '', ['child_page', 'child_database', 'link_to_page'], true)) {
+                    continue;
+                }
+                $blocks[] = $block;
+                if (($block['has_children'] ?? false) === true) {
+                    array_push($blocks, ...$this->readBlockChildren($block['id'], $visited, $requests));
+                }
+            }
+            $cursor = ($page['has_more'] ?? false) ? ($page['next_cursor'] ?? '') : null;
+            if ($cursor !== null) {
+                if (!is_string($cursor) || trim($cursor) === '' || isset($cursors[$cursor])) {
+                    throw new NotionApiException('Invalid or repeated page content cursor.');
+                }
+                $cursors[$cursor] = true;
+            }
+        } while ($cursor !== null);
+        return $blocks;
+    }
+
     /**
      * @param array<string, mixed> $properties
      * @param array<int, array<string, mixed>> $children

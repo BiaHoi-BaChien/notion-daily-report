@@ -66,10 +66,16 @@ final class ReportBuilder
     /**
      * @param array<int, array<string, mixed>> $items
      */
-    public function renderSchedule(array $items, DateTimeImmutable $today, string $format = self::FORMAT_TEXT): string
+    public function renderSchedule(array $items, DateTimeImmutable $today, string $format = self::FORMAT_TEXT, array $brief = []): string
     {
         $lines = [];
         $lines[] = $this->todayHeader($today);
+
+        $this->appendSectionHeader($lines, '今日の要点');
+        foreach ($this->overview($items, $brief) as $text) {
+            $lines[] = '・' . $this->formatText($text, $format);
+        }
+        $lines[] = '';
 
         $this->appendSectionHeader($lines, '🔥 今日の予定');
         $this->appendRowsTable(
@@ -81,15 +87,19 @@ final class ReportBuilder
         );
         $lines[] = '';
 
-        $this->appendSectionHeader($lines, '⚠ 本日期限のタスク');
-        $this->appendRows(
-            $lines,
-            $this->todayProjectTaskItems($items),
-            false,
-            true,
-            $format
-        );
-        $lines[] = '';
+        if ($this->todayProjectTaskItems($items) !== []) {
+            $this->appendSectionHeader($lines, '⚠ 本日期限のタスク');
+            $this->appendRows($lines, $this->todayProjectTaskItems($items), false, true, $format);
+            $lines[] = '';
+        }
+        $meetingRows = $this->meetingRows($brief);
+        if ($meetingRows !== []) {
+            $this->appendSectionHeader($lines, '今日の案件の確認事項');
+            foreach ($meetingRows as $row) {
+                $lines[] = '・' . $this->linkedRow($row, $format);
+            }
+            $lines[] = '';
+        }
 
         $this->appendSectionHeader($lines, '⏰ 明日の時間付き予定');
         $this->appendRowsTable(
@@ -115,16 +125,10 @@ final class ReportBuilder
         if ($healthGroups !== []) {
             $lines[] = '';
             $this->appendSectionHeader($lines, '🏥 健康');
-            $groupIndex = 0;
             foreach ($healthGroups as $label => $healthItems) {
-                if ($groupIndex > 0) {
-                    $lines[] = '';
-                }
-                $lines[] = $this->formatText($label, $format);
                 foreach ($healthItems as $healthItem) {
-                    $lines[] = $this->formatText($this->healthText($healthItem), $format);
+                    $lines[] = '・' . $this->linkedRow($this->healthRow($label, $healthItem), $format);
                 }
-                $groupIndex++;
             }
         }
 
@@ -164,6 +168,11 @@ final class ReportBuilder
             }
         }
 
+        if (isset($brief['book']) || isset($brief['book_error'])) {
+            $lines[] = '';
+            $this->appendSectionHeader($lines, '今日の小さな楽しみ');
+            $lines[] = $this->linkedRow($this->bookRow($brief), $format);
+        }
         return rtrim(implode(PHP_EOL, $lines)) . PHP_EOL;
     }
 
@@ -181,7 +190,7 @@ final class ReportBuilder
      * @param array<int, array<string, mixed>> $items
      * @return array<int, array<string, mixed>>
      */
-    public function renderNotionBlocks(?string $comment, array $items, DateTimeImmutable $today): array
+    public function renderNotionBlocks(?string $comment, array $items, DateTimeImmutable $today, array $brief = []): array
     {
         $today = $today->setTimezone($this->timezone);
         $blocks = [];
@@ -191,11 +200,25 @@ final class ReportBuilder
             $blocks[] = $this->notionCallout('🤖', $this->notionText($comment));
         }
 
+        $blocks[] = $this->notionHeading(2, '今日の要点');
+        foreach ($this->overview($items, $brief) as $text) {
+            $blocks[] = $this->notionBullet($this->notionText($text));
+        }
+
         $blocks[] = $this->notionHeading(2, '🔥 今日の予定');
         $this->appendNotionTimedTableWithUntimedRows($blocks, $this->todayTodoItems($items), true);
 
-        $blocks[] = $this->notionHeading(2, '⚠️ 本日期限のタスク');
-        $this->appendNotionTable($blocks, $this->todayProjectTaskItems($items), true);
+        if ($this->todayProjectTaskItems($items) !== []) {
+            $blocks[] = $this->notionHeading(2, '⚠️ 本日期限のタスク');
+            $this->appendNotionTable($blocks, $this->todayProjectTaskItems($items), true);
+        }
+        $meetingRows = $this->meetingRows($brief);
+        if ($meetingRows !== []) {
+            $blocks[] = $this->notionHeading(2, '今日の案件の確認事項');
+            foreach ($meetingRows as $row) {
+                $blocks[] = $this->notionBullet($this->notionLinkedRow($row));
+            }
+        }
 
         $blocks[] = $this->notionHeading(2, '⏰ 明日の時間付き予定');
         $this->appendNotionTable($blocks, $this->tomorrowTimedTodoAndCalendarItems($items, $today), true);
@@ -207,9 +230,8 @@ final class ReportBuilder
         if ($healthGroups !== []) {
             $blocks[] = $this->notionHeading(2, '🏥 健康');
             foreach ($healthGroups as $label => $healthItems) {
-                $blocks[] = $this->notionHeading(3, $label);
                 foreach ($healthItems as $healthItem) {
-                    $blocks[] = $this->notionBullet($this->notionText(ltrim($this->healthText($healthItem), '・')));
+                    $blocks[] = $this->notionBullet($this->notionLinkedRow($this->healthRow($label, $healthItem)));
                 }
             }
         }
@@ -260,7 +282,76 @@ final class ReportBuilder
             }
         }
 
+        if (isset($brief['book']) || isset($brief['book_error'])) {
+            $blocks[] = $this->notionHeading(2, '今日の小さな楽しみ');
+            $blocks[] = $this->notionBullet($this->notionLinkedRow($this->bookRow($brief)));
+        }
         return $blocks;
+    }
+
+    private function overview(array $items, array $brief): array
+    {
+        $points = $brief['highlights'] ?? [];
+        if ($points === []) {
+            $todayItems = array_merge($this->todayTodoItems($items), $this->todayProjectTaskItems($items));
+            foreach (array_slice($this->sortRows($todayItems, true), 0, 2) as $item) {
+                $points[] = ltrim($this->rowText($item, false, false, self::FORMAT_TEXT), '・');
+            }
+        }
+        $points = array_slice($points, 0, 2);
+        $count = count($this->todayProjectTaskItems($items));
+        $available = ($brief['source_status']['各案件のタスク'] ?? true) === true;
+        $points[] = '本日期限：' . ($available ? ($count === 0 ? 'なし' : $count . '件')
+            : ('取得不可' . ($count > 0 ? '（確認済み' . $count . '件）' : '')));
+        return $points;
+    }
+
+    private function meetingRows(array $brief): array
+    {
+        $rows = [];
+        if (isset($brief['meeting_error'])) {
+            $rows[] = ['text' => '議事録：' . $brief['meeting_error']];
+            foreach (array_slice($brief['meetings'] ?? [], 0, 2) as $note) {
+                $rows[] = ['text' => '原文確認｜' . $note['date_label'], 'label' => $note['title'], 'url' => $note['url']];
+            }
+            return $rows;
+        }
+        foreach (array_slice($brief['meeting_points'] ?? [], 0, 2) as $point) {
+            $rows[] = ['text' => $point['text'], 'label' => '出典：' . $point['source']['date_label'], 'url' => $point['source']['url']];
+        }
+        return $rows;
+    }
+
+    private function healthRow(string $label, array $item): array
+    {
+        return ['text' => $label . '：' . ltrim($this->healthText($item), '・'), 'label' => '詳細', 'url' => $item['detail_url'] ?? null];
+    }
+
+    private function bookRow(array $brief): array
+    {
+        if (!isset($brief['book'])) {
+            return ['text' => '読書リスト：' . $brief['book_error']];
+        }
+        return ['text' => '『' . $brief['book']['title'] . '』の続きを少し読む。', 'label' => '本の記録', 'url' => $brief['book']['url']];
+    }
+
+    private function linkedRow(array $row, string $format): string
+    {
+        $text = $this->formatText($row['text'], $format);
+        $url = $this->notionUrl($row);
+        if ($url === null) {
+            return $text;
+        }
+        $link = $format === self::FORMAT_TEXT ? $row['label'] . '：' . $url
+            : $this->formatTitle(['title' => $row['label'], 'url' => $url], $format);
+        return $text . '｜' . $link;
+    }
+
+    private function notionLinkedRow(array $row): array
+    {
+        $text = $this->notionText($row['text']);
+        $url = $this->notionUrl($row);
+        return $url === null ? $text : array_merge($text, $this->notionText('｜'), $this->notionText($row['label'], $url));
     }
 
     private function todayHeader(DateTimeImmutable $today): string
@@ -434,7 +525,7 @@ final class ReportBuilder
                     (string) ($left['created_time'] ?? ''),
                 ];
             });
-            $groups[$label] = array_slice($matches, 0, 3);
+            $groups[$label] = array_slice($matches, 0, 1);
         }
 
         return $groups;
@@ -468,7 +559,7 @@ final class ReportBuilder
             return '日付不明';
         }
 
-        return $date->format(($item['date_has_time'] ?? false) === true ? 'n月j日 H:i' : 'n月j日');
+        return $date->format(($item['health_metric'] ?? '') !== 'steps' && ($item['date_has_time'] ?? false) === true ? 'n月j日 H:i' : 'n月j日');
     }
 
     private function healthNumber(mixed $value): string
@@ -800,7 +891,9 @@ final class ReportBuilder
             return null;
         }
 
-        return trim($url);
+        $url = trim($url);
+        return filter_var($url, FILTER_VALIDATE_URL) !== false
+            && in_array(strtolower((string) parse_url($url, PHP_URL_SCHEME)), ['http', 'https'], true) ? $url : null;
     }
 
     /**

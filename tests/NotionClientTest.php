@@ -15,6 +15,42 @@ use PHPUnit\Framework\TestCase;
 
 final class NotionClientTest extends TestCase
 {
+    public function testReadsNestedPaginatedBlocksWithoutFollowingLinkedPages(): void
+    {
+        $history = [];
+        $responses = [
+            ['results' => [
+                ['id' => 'toggle', 'type' => 'toggle', 'has_children' => true],
+                ['id' => 'separate-page', 'type' => 'child_page', 'has_children' => true],
+                ['id' => 'linked-page', 'type' => 'link_to_page', 'has_children' => true],
+            ], 'has_more' => true, 'next_cursor' => 'root-next'],
+            ['results' => [['id' => 'nested-a', 'type' => 'to_do']], 'has_more' => true, 'next_cursor' => 'nested-next'],
+            ['results' => [['id' => 'nested-b', 'type' => 'paragraph']], 'has_more' => false],
+            ['results' => [['id' => 'last', 'type' => 'paragraph']], 'has_more' => false],
+        ];
+        $stack = HandlerStack::create(new MockHandler(array_map(static fn (array $body): Response => new Response(200, [], json_encode($body)), $responses)));
+        $stack->push(Middleware::history($history));
+        $client = new NotionClient('test-token', '2026-03-11', 20, new Client(['base_uri' => 'https://api.notion.com', 'handler' => $stack]));
+        self::assertSame(['toggle', 'nested-a', 'nested-b', 'last'], array_column($client->retrieveBlockChildren('root'), 'id'));
+        self::assertCount(4, $history);
+        self::assertSame('/v1/blocks/toggle/children', $history[2]['request']->getUri()->getPath());
+        self::assertStringContainsString('start_cursor=nested-next', $history[2]['request']->getUri()->getQuery());
+        self::assertStringContainsString('start_cursor=root-next', $history[3]['request']->getUri()->getQuery());
+        foreach ($history as $request) {
+            self::assertSame('GET', $request['request']->getMethod());
+        }
+    }
+
+    public function testRejectsRepeatedBlockPaginationCursor(): void
+    {
+        $response = ['results' => [], 'has_more' => true, 'next_cursor' => 'repeated'];
+        $mock = new MockHandler([new Response(200, [], json_encode($response)), new Response(200, [], json_encode($response))]);
+        $client = new NotionClient('test-token', '2026-03-11', 20, new Client(['handler' => HandlerStack::create($mock)]));
+        $this->expectException(NotionApiException::class);
+        $this->expectExceptionMessage('Invalid or repeated page content cursor');
+        $client->retrieveBlockChildren('root');
+    }
+
     public function testUsesConfiguredCaBundleForDefaultHttpClient(): void
     {
         $client = new NotionClient('secret-token', '2026-03-11', 20, null, 'C:/certs/cacert.pem');

@@ -970,7 +970,7 @@ final class ReportBuilder
             'object' => 'block',
             'type' => 'table',
             'table' => [
-                'table_width' => 3,
+                'table_width' => 2,
                 'has_column_header' => false,
                 'has_row_header' => false,
                 'children' => $rows,
@@ -985,6 +985,14 @@ final class ReportBuilder
     private function notionItemTableRow(array $item, bool $includeGroup): array
     {
         $group = $includeGroup ? $this->displayGroupName($item) : null;
+        $title = $this->notionTitleText($item);
+        if ($group !== null) {
+            foreach ($this->notionText("\n" . $group) as $groupText) {
+                $groupText['annotations'] = ['color' => 'gray'];
+                $title[] = $groupText;
+            }
+        }
+
         $time = $this->dateText($item, false);
         if ($time === '終日') {
             $time = '';
@@ -996,8 +1004,7 @@ final class ReportBuilder
             'table_row' => [
                 'cells' => [
                     $time === '' ? [] : $this->notionText($time),
-                    $this->notionTitleText($item),
-                    $group === null ? [] : $this->notionText($group),
+                    $title,
                 ],
             ],
         ];

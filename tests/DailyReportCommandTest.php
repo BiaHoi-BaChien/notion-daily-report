@@ -804,13 +804,19 @@ final class DailyReportCommandTest extends TestCase
             static fn (array $block): bool => ($block['type'] ?? null) === 'table'
         ));
         self::assertNotEmpty($tables);
-        self::assertSame(3, $tables[0]['table']['table_width']);
         self::assertFalse($tables[0]['table']['has_column_header']);
 
         $tableRows = [];
         foreach ($tables as $table) {
+            self::assertSame(2, $table['table']['table_width']);
             foreach ($table['table']['children'] as $child) {
-                $tableRows[] = $child['table_row']['cells'];
+                $cells = $child['table_row']['cells'];
+                self::assertCount(2, $cells);
+                foreach (array_slice($cells[1], 1) as $groupText) {
+                    self::assertSame('gray', $groupText['annotations']['color']);
+                    self::assertNull($groupText['text']['link']);
+                }
+                $tableRows[] = $cells;
             }
         }
 
@@ -828,23 +834,24 @@ final class DailyReportCommandTest extends TestCase
         self::assertNotNull($linkedRow);
         self::assertSame('09:00', $linkedRow[0][0]['text']['content']);
         self::assertSame('https://notion.example/page?a=1&b=2', $linkedRow[1][0]['text']['link']['url']);
+        self::assertCount(1, $linkedRow[1]);
         self::assertNull($findTableRow($tableRows, '今日の時間なし予定'));
 
         $tomorrowRow = $findTableRow($tableRows, '明日の予定');
         self::assertNotNull($tomorrowRow);
         self::assertSame('18:00', $tomorrowRow[0][0]['text']['content']);
-        self::assertSame('翌日案件', $tomorrowRow[2][0]['text']['content']);
+        self::assertSame("\n翌日案件", $tomorrowRow[1][1]['text']['content']);
 
         $deadlineRow = $findTableRow($tableRows, '期限タスク');
         self::assertNotNull($deadlineRow);
         self::assertSame('18:00', $deadlineRow[0][0]['text']['content']);
-        self::assertSame('決済システム', $deadlineRow[2][0]['text']['content']);
+        self::assertSame("\n決済システム", $deadlineRow[1][1]['text']['content']);
 
         $upcomingRow = $findTableRow($tableRows, '来週の確認');
         self::assertNotNull($upcomingRow);
         self::assertSame('10:00', $upcomingRow[0][0]['text']['content']);
         self::assertSame('https://notion.example/upcoming', $upcomingRow[1][0]['text']['link']['url']);
-        self::assertSame('案件A', $upcomingRow[2][0]['text']['content']);
+        self::assertSame("\n案件A", $upcomingRow[1][1]['text']['content']);
         self::assertNull($findTableRow($tableRows, '時間なし予定'));
 
         $untimedBulletIndex = null;
@@ -898,6 +905,81 @@ final class DailyReportCommandTest extends TestCase
             'TECHCOMBANK(Debid Card)',
             $identityCallouts[0]['callout']['children'][1]['bulleted_list_item']['rich_text'][0]['text']['content']
         );
+    }
+
+    public function testRendersLongNotionTableTitlesAndGroupsWithoutLosingLinksOrUtf8(): void
+    {
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $today = new DateTimeImmutable('2026-04-22', $timezone);
+        $builder = new ReportBuilder($timezone);
+        $title = str_repeat('長い日本語のタスク名', 100);
+        $group = str_repeat('長い分類名', 150);
+
+        foreach ([null, 'https://notion.example/long-title'] as $url) {
+            $item = $this->extractedItem($title, '2026-04-21', 'ToDo', '今日やるべき作業の確認', '2026-04-21T09:00:00+07:00');
+            $item['project'] = $group;
+            $item['url'] = $url;
+            $item['date_end'] = '2026-04-22T18:00:00+07:00';
+            $item['date_end_has_time'] = true;
+            $blocks = $builder->renderNotionBlocks(null, $builder->classifyAndSort([$item], $today), $today);
+            $tables = array_values(array_filter($blocks, static fn (array $block): bool => $block['type'] === 'table'));
+            self::assertNotEmpty($tables);
+            $cells = $tables[0]['table']['children'][0]['table_row']['cells'];
+            self::assertCount(2, $cells);
+            $titleText = '';
+            $groupText = '';
+            foreach ($cells[1] as $fragment) {
+                self::assertLessThanOrEqual(1800, strlen($fragment['text']['content']));
+                if (($fragment['annotations']['color'] ?? null) === 'gray') {
+                    $groupText .= $fragment['text']['content'];
+                    self::assertNull($fragment['text']['link']);
+                } else {
+                    $titleText .= $fragment['text']['content'];
+                    self::assertSame($url === null ? null : ['url' => $url], $fragment['text']['link']);
+                }
+            }
+            self::assertSame($title . '（最終日／4月22日まで）', $titleText);
+            self::assertSame("\n" . $group, $groupText);
+            self::assertSame(
+                $titleText . $groupText,
+                implode('', array_column(array_column($cells[1], 'text'), 'content'))
+            );
+            self::assertIsString(json_encode($blocks, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+        }
+    }
+
+    public function testRendersNotionSchoolAndHiddenGroupsAndUntimedDeadline(): void
+    {
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $today = new DateTimeImmutable('2026-04-22', $timezone);
+        $builder = new ReportBuilder($timezone);
+
+        foreach ([
+            ['カレンダー', '学校', '', '2026-04-22T16:30:00+07:00', '16:30', '学校'],
+            ['カレンダー', '生活', '', '2026-04-22T16:30:00+07:00', '16:30', null],
+            ['ToDo', '', '', '2026-04-22T16:30:00+07:00', '16:30', null],
+            ['各案件のタスク', '', '案件A', '2026-04-22', '', '案件A'],
+        ] as [$source, $genre, $project, $start, $time, $group]) {
+            $item = $this->extractedItem('確認する予定', '2026-04-22', $source, '確認', $start);
+            $item['genre'] = $genre;
+            $item['project'] = $project;
+            $blocks = $builder->renderNotionBlocks(null, $builder->classifyAndSort([$item], $today), $today);
+            $tables = array_values(array_filter($blocks, static fn (array $block): bool => $block['type'] === 'table'));
+            self::assertCount(1, $tables);
+            $cells = $tables[0]['table']['children'][0]['table_row']['cells'];
+            self::assertCount(2, $cells);
+            self::assertSame($time, $cells[0][0]['text']['content'] ?? '');
+            self::assertSame('確認する予定', $cells[1][0]['text']['content']);
+            self::assertNull($cells[1][0]['text']['link']);
+            if ($group === null) {
+                self::assertCount(1, $cells[1]);
+            } else {
+                self::assertCount(2, $cells[1]);
+                self::assertSame("\n" . $group, $cells[1][1]['text']['content']);
+                self::assertSame('gray', $cells[1][1]['annotations']['color']);
+                self::assertNull($cells[1][1]['text']['link']);
+            }
+        }
     }
 
     public function testRendersNotionEmptySectionsAsBulletedNoMatchMessage(): void

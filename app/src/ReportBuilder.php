@@ -24,6 +24,7 @@ final class ReportBuilder
     private const GROUP_LIFE = '生活';
     private const GENRE_HOLIDAY = '祝日';
     private const SECTION_SEPARATOR = '━━━━━━━━━━';
+    private const NOTION_MAX_ARRAY_ELEMENTS = 100;
 
     private const PRIORITY = [
         'overdue' => 1,
@@ -734,7 +735,7 @@ final class ReportBuilder
             $rows[] = $this->notionItemTableRow($item, $includeGroup);
         }
 
-        $blocks[] = $this->notionTable($rows);
+        array_push($blocks, ...$this->notionTables($rows));
     }
 
     /**
@@ -763,7 +764,7 @@ final class ReportBuilder
         }
 
         if ($tableRows !== []) {
-            $blocks[] = $this->notionTable($tableRows);
+            array_push($blocks, ...$this->notionTables($tableRows));
         }
     }
 
@@ -790,7 +791,7 @@ final class ReportBuilder
             $dateKey = $this->dateGroupKey($start);
             if ($dateKey !== $currentDate) {
                 if ($tableRows !== []) {
-                    $blocks[] = $this->notionTable($tableRows);
+                    array_push($blocks, ...$this->notionTables($tableRows));
                     $tableRows = [];
                 }
 
@@ -806,7 +807,7 @@ final class ReportBuilder
         }
 
         if ($tableRows !== []) {
-            $blocks[] = $this->notionTable($tableRows);
+            array_push($blocks, ...$this->notionTables($tableRows));
         }
     }
 
@@ -962,20 +963,33 @@ final class ReportBuilder
 
     /**
      * @param array<int, array<string, mixed>> $rows
-     * @return array<string, mixed>
+     * @return array<int, array<string, mixed>>
      */
-    private function notionTable(array $rows): array
+    private function notionTables(array $rows): array
     {
-        return [
+        // Notion limits both rich-text arrays and table children to 100 elements.
+        $splitRows = [];
+        foreach ($rows as $row) {
+            foreach (array_chunk($row['table_row']['cells'][1], self::NOTION_MAX_ARRAY_ELEMENTS) as $index => $cell) {
+                $splitRow = $row;
+                $splitRow['table_row']['cells'][1] = $cell;
+                if ($index > 0) {
+                    $splitRow['table_row']['cells'][0] = [];
+                }
+                $splitRows[] = $splitRow;
+            }
+        }
+
+        return array_map(static fn (array $tableRows): array => [
             'object' => 'block',
             'type' => 'table',
             'table' => [
                 'table_width' => 2,
                 'has_column_header' => false,
                 'has_row_header' => false,
-                'children' => $rows,
+                'children' => $tableRows,
             ],
-        ];
+        ], array_chunk($splitRows, self::NOTION_MAX_ARRAY_ELEMENTS));
     }
 
     /**

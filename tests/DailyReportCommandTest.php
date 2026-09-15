@@ -948,6 +948,94 @@ final class DailyReportCommandTest extends TestCase
         }
     }
 
+    public function testBoundsNotionTableCellsWithoutDroppingTextOrAnnotations(): void
+    {
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $today = new DateTimeImmutable('2026-09-15', $timezone);
+        $builder = new ReportBuilder($timezone);
+
+        foreach ([
+            [99, '', 1],
+            [99, '学校', 1],
+            [100, '学校', 2],
+            [50, str_repeat('い', 30000), 2],
+            [100, str_repeat('い', 59400), 2],
+        ] as [$titleFragments, $group, $expectedRows]) {
+            $title = str_repeat('あ', 600 * $titleFragments);
+            $item = $this->extractedItem($title, '2026-09-15', 'ToDo', '確認', '2026-09-15T09:00:00+07:00');
+            $item['project'] = $group;
+            $item['url'] = 'https://notion.example/oversized-title';
+            $blocks = $builder->renderNotionBlocks(null, $builder->classifyAndSort([$item], $today), $today);
+            $tables = array_values(array_filter($blocks, static fn (array $block): bool => $block['type'] === 'table'));
+            self::assertCount(1, $tables);
+            self::assertCount($expectedRows, $tables[0]['table']['children']);
+            $actualText = '';
+            $actualTitle = '';
+            $actualGroup = '';
+            foreach ($tables[0]['table']['children'] as $index => $row) {
+                $cells = $row['table_row']['cells'];
+                self::assertCount(2, $cells);
+                self::assertLessThanOrEqual(100, count($cells[1]));
+                self::assertSame($index === 0 ? '09:00' : '', $cells[0][0]['text']['content'] ?? '');
+                foreach ($cells[1] as $fragment) {
+                    self::assertLessThanOrEqual(1800, strlen($fragment['text']['content']));
+                    $actualText .= $fragment['text']['content'];
+                    if (($fragment['annotations']['color'] ?? null) === 'gray') {
+                        $actualGroup .= $fragment['text']['content'];
+                        self::assertNull($fragment['text']['link']);
+                    } else {
+                        $actualTitle .= $fragment['text']['content'];
+                        self::assertSame(['url' => $item['url']], $fragment['text']['link']);
+                    }
+                }
+            }
+            self::assertSame($title, $actualTitle);
+            self::assertSame($group === '' ? '' : "\n" . $group, $actualGroup);
+            self::assertSame($actualTitle . $actualGroup, $actualText);
+            self::assertIsString(json_encode($blocks, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+        }
+    }
+
+    public function testSplitsNotionTablesWhenContinuationRowsExceedChildLimit(): void
+    {
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $today = new DateTimeImmutable('2026-09-15', $timezone);
+        $builder = new ReportBuilder($timezone);
+
+        foreach ([
+            ['ToDo', '2026-09-15'],
+            ['各案件のタスク', '2026-09-15'],
+            ['ToDo', '2026-09-16'],
+            ['カレンダー', '2026-09-17'],
+        ] as [$source, $date]) {
+            $items = [];
+            for ($index = 0; $index < 99; $index++) {
+                $items[] = $this->extractedItem(sprintf('予定%03d', $index), $date, $source, '確認', $date . 'T08:00:00+07:00');
+            }
+            $oversized = $this->extractedItem(str_repeat('あ', 30000), $date, $source, '確認', $date . 'T09:00:00+07:00');
+            $oversized['project'] = str_repeat('い', 30000);
+            $items[] = $oversized;
+            $items[] = $this->extractedItem('次の予定', $date, $source, '確認', $date . 'T10:00:00+07:00');
+            $blocks = $builder->renderNotionBlocks(null, $builder->classifyAndSort($items, $today), $today);
+            $tables = array_values(array_filter($blocks, static fn (array $block): bool => $block['type'] === 'table'));
+            self::assertCount(2, $tables);
+            self::assertCount(100, $tables[0]['table']['children']);
+            self::assertCount(2, $tables[1]['table']['children']);
+            self::assertSame('09:00', $tables[0]['table']['children'][99]['table_row']['cells'][0][0]['text']['content']);
+            self::assertSame([], $tables[1]['table']['children'][0]['table_row']['cells'][0]);
+            self::assertSame('次の予定', $tables[1]['table']['children'][1]['table_row']['cells'][1][0]['text']['content']);
+            foreach ($tables as $table) {
+                self::assertSame(2, $table['table']['table_width']);
+                foreach ($table['table']['children'] as $row) {
+                    self::assertCount(2, $row['table_row']['cells']);
+                    foreach ($row['table_row']['cells'] as $cell) {
+                        self::assertLessThanOrEqual(100, count($cell));
+                    }
+                }
+            }
+        }
+    }
+
     public function testRendersNotionSchoolAndHiddenGroupsAndUntimedDeadline(): void
     {
         $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');

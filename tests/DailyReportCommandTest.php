@@ -94,6 +94,74 @@ final class DailyReportCommandTest extends TestCase
         self::assertFileExists($logPath);
     }
 
+    public function testPreservesUntimedUtf8TitlesThroughSummaryAndDelivery(): void
+    {
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
+        foreach (['テスト', 'あいう', '【進捗確認】', '・テスト'] as $title) {
+            foreach ([false, true] as $aiEnabled) {
+                $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+                $notion = new StubNotionClient([$this->page($title, '2026-09-21', '未着手')]);
+                $slack = new StubSlackNotifier();
+                $mail = new StubMailNotifier();
+                $openai = new StubOpenAIClient($title);
+                $config = $this->config();
+                $config['openai'] = ['enabled' => $aiEnabled];
+                $config['notion_report'] = ['enabled' => true, 'data_source_id' => 'report-source-id'];
+                $command = new DailyReportCommand(
+                    $config,
+                    $notion,
+                    new PropertyExtractor($timezone),
+                    new DateFilter($timezone),
+                    new ReportBuilder($timezone),
+                    new Logger($logPath, $timezone),
+                    $timezone,
+                    false,
+                    $slack,
+                    $openai,
+                    $mail
+                );
+
+                self::assertSame(0, $command->run(['daily_report.php', '--date=2026-09-21']), $title);
+                if ($aiEnabled) {
+                    $input = json_decode($openai->receivedSchedule, true, 512, JSON_THROW_ON_ERROR);
+                    $overview = explode('🔥 今日の予定', $input['schedule'])[0];
+                    self::assertStringContainsString(PHP_EOL . '・' . $title . PHP_EOL, $overview);
+                } else {
+                    self::assertSame('', $openai->receivedSchedule);
+                }
+                foreach ([$slack->sentText, $mail->sentBody, $mail->sentPlainBody] as $report) {
+                    self::assertNotNull($report);
+                    $overview = explode('🔥 今日の予定', $report)[0];
+                    self::assertStringContainsString(PHP_EOL . '・' . $title . PHP_EOL, $overview);
+                }
+                self::assertCount(1, $notion->createdPages);
+                $blocks = $notion->createdPages[0]['children'];
+                self::assertSame($title, $blocks[1]['bulleted_list_item']['rich_text'][0]['text']['content']);
+                self::assertIsString(json_encode($blocks, JSON_THROW_ON_ERROR));
+            }
+        }
+    }
+
+    public function testPreservesUtf8BirthdayNamesInNotionBlocks(): void
+    {
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $builder = new ReportBuilder($timezone);
+        $today = new DateTimeImmutable('2026-09-21', $timezone);
+        foreach (['テスト', 'あいう', '・テスト'] as $title) {
+            $item = $this->extractedItem($title, '2026-09-21', '誕生日', '誕生日確認', '2026-09-21');
+            $item['extra'] = ['birthdate' => '1990-09-21', 'age' => '36'];
+            $blocks = $builder->renderNotionBlocks(null, $builder->classifyAndSort([$item], $today), $today);
+            $callouts = array_values(array_filter($blocks, static fn (array $block): bool =>
+                ($block['callout']['icon']['emoji'] ?? null) === '🎂'
+            ));
+
+            self::assertCount(1, $callouts);
+            $richText = $callouts[0]['callout']['children'][0]['bulleted_list_item']['rich_text'];
+            self::assertSame($title . '｜1990年09月21日｜36歳', $richText[0]['text']['content']);
+            self::assertIsString(json_encode($blocks, JSON_THROW_ON_ERROR));
+        }
+    }
+
     public function testIncludesAnActiveCalendarRangeThatStartedBeforeToday(): void
     {
         $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');

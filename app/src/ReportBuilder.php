@@ -277,7 +277,7 @@ final class ReportBuilder
             if ($birthdays !== []) {
                 $birthdayChildren = [];
                 foreach ($this->sortRows($birthdays, true) as $birthday) {
-                    $birthdayChildren[] = $this->notionBullet($this->notionText(ltrim($this->birthdayText($birthday), '・')));
+                    $birthdayChildren[] = $this->notionBullet($this->notionText(substr($this->birthdayText($birthday), strlen('・'))));
                 }
                 $blocks[] = $this->notionCallout('🎂', $this->notionText('もうすぐ誕生日'), $birthdayChildren);
             }
@@ -296,7 +296,7 @@ final class ReportBuilder
         if ($points === []) {
             $todayItems = array_merge($this->todayTodoItems($items), $this->todayProjectTaskItems($items));
             foreach (array_slice($this->sortRows($todayItems, true), 0, 2) as $item) {
-                $points[] = ltrim($this->rowText($item, false, false, self::FORMAT_TEXT), '・');
+                $points[] = substr($this->rowText($item, false, false, self::FORMAT_TEXT), strlen('・'));
             }
         }
         $points = array_slice($points, 0, 2);
@@ -325,7 +325,7 @@ final class ReportBuilder
 
     private function healthRow(string $label, array $item): array
     {
-        return ['text' => $label . '：' . ltrim($this->healthText($item), '・'), 'label' => '詳細', 'url' => $item['detail_url'] ?? null];
+        return ['text' => $label . '：' . substr($this->healthText($item), strlen('・')), 'label' => '詳細', 'url' => $item['detail_url'] ?? null];
     }
 
     private function bookRow(array $brief): array

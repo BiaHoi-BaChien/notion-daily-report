@@ -23,47 +23,22 @@ final class BriefContextBuilder
     public function load(array $config, array $items, DateTimeImmutable $today, string $runId): array
     {
         $today = $today->setTimezone($this->timezone)->setTime(0, 0);
-        $brief = ['meetings' => [], 'meeting_points' => [], 'highlights' => [], 'book' => null];
-        foreach (['meeting_notes', 'reading'] as $key) {
-            $source = $config[$key] ?? [];
-            if (trim((string) ($source['data_source_id'] ?? '')) === '') {
-                continue;
-            }
-            try {
-                if ($key === 'reading') {
-                    $brief['book'] = $this->reading($source);
-                } else {
-                    $brief['meetings'] = $this->meetings($source, $items, $today);
-                }
-            } catch (Throwable $exception) {
-                $brief[$key === 'reading' ? 'book_error' : 'meeting_error'] = '取得不可';
-                $this->logger->error('brief_source_failed', [
-                    'run_id' => $runId,
-                    'source' => $key,
-                    'exception_class' => $exception::class,
-                ]);
-            }
+        $brief = ['meetings' => [], 'meeting_points' => [], 'highlights' => []];
+        $source = $config['meeting_notes'] ?? [];
+        if (trim((string) ($source['data_source_id'] ?? '')) === '') {
+            return $brief;
+        }
+        try {
+            $brief['meetings'] = $this->meetings($source, $items, $today);
+        } catch (Throwable $exception) {
+            $brief['meeting_error'] = '取得不可';
+            $this->logger->error('brief_source_failed', [
+                'run_id' => $runId,
+                'source' => 'meeting_notes',
+                'exception_class' => $exception::class,
+            ]);
         }
         return $brief;
-    }
-
-    private function reading(array $source): ?array
-    {
-        $pages = $this->notion->queryDataSource($source['data_source_id'], [], [
-            'property' => $source['status_property'],
-            'status' => ['equals' => '読書中'],
-        ]);
-        $books = [];
-        foreach ($pages as $page) {
-            $book = $this->extractor->extract($page, $source);
-            if ($book['status'] === '読書中') {
-                $books[] = $book;
-            }
-        }
-        usort($books, static fn (array $a, array $b): int =>
-            (($b['date'] ?? '') <=> ($a['date'] ?? '')) ?: strcmp((string) $a['id'], (string) $b['id'])
-        );
-        return $books[0] ?? null;
     }
 
     private function meetings(array $source, array $items, DateTimeImmutable $today): array

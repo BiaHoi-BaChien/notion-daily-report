@@ -169,11 +169,6 @@ final class ReportBuilder
             }
         }
 
-        if (isset($brief['book']) || isset($brief['book_error'])) {
-            $lines[] = '';
-            $this->appendSectionHeader($lines, '今日の小さな楽しみ');
-            $lines[] = $this->linkedRow($this->bookRow($brief), $format);
-        }
         return rtrim(implode(PHP_EOL, $lines)) . PHP_EOL;
     }
 
@@ -283,10 +278,6 @@ final class ReportBuilder
             }
         }
 
-        if (isset($brief['book']) || isset($brief['book_error'])) {
-            $blocks[] = $this->notionHeading(2, '今日の小さな楽しみ');
-            $blocks[] = $this->notionBullet($this->notionLinkedRow($this->bookRow($brief)));
-        }
         return $blocks;
     }
 
@@ -326,14 +317,6 @@ final class ReportBuilder
     private function healthRow(string $label, array $item): array
     {
         return ['text' => $label . '：' . substr($this->healthText($item), strlen('・')), 'label' => '詳細', 'url' => $item['detail_url'] ?? null];
-    }
-
-    private function bookRow(array $brief): array
-    {
-        if (!isset($brief['book'])) {
-            return ['text' => '読書リスト：' . $brief['book_error']];
-        }
-        return ['text' => '『' . $brief['book']['title'] . '』の続きを少し読む。', 'label' => '本の記録', 'url' => $brief['book']['url']];
     }
 
     private function linkedRow(array $row, string $format): string

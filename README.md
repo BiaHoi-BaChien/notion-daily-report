@@ -163,7 +163,6 @@ Notion report creation is optional. Set `REPORT_NOTION_ENABLED=true` and `REPORT
 - 議事録は当日を含む14日間（当日−13日〜当日）、今日のToDo・カレンダー・案件タスクと同じProjectのものだけを対象とします。タイトル内の会議日（YYYY年M月D日、YYYY/M/D、YYYY-M-D）を優先し、なければ登録日を使います。Project未設定は対象外です。
 - 作成・更新日時と会議日が異なるページを取りこぼさないよう、Projectで候補を取得して会議日／登録日を検査し、対象の本文だけを読みます。ページ内の入れ子・ページ分割には対応しますが、リンク先の別ページや子ページ・DBは読みません。本文取得は1議事録あたり最大100リクエストで中断し、取得不可と表示します。
 - AIへの議事録送信には本文とチェック状態を含みます。新しい完了・変更情報を優先するよう指示し、古いフォロー項目は「完了確認が必要」と表示します。要約は自動生成なので原文リンクで確認できます。
-- 読書中の本は購入日降順、同日の場合はページID昇順で1冊を表示します。購入日なしは日付ありの後、読了・未読は対象外です。候補なしは省略、取得失敗は取得不可と表示します。
 
 追加設定（実値はローカル／本番の環境設定にのみ保存）：
 
@@ -173,10 +172,6 @@ Notion report creation is optional. Set `REPORT_NOTION_ENABLED=true` and `REPORT
 | `NOTION_MEETING_TITLE_PROPERTY` | `Name` |
 | `NOTION_MEETING_CREATED_PROPERTY` | `Created`（created_time型） |
 | `NOTION_MEETING_PROJECT_PROPERTY` | `関連Project`（Relation型） |
-| `NOTION_READING_DATA_SOURCE_ID` | 読書リスト。空なら無効 |
-| `NOTION_READING_TITLE_PROPERTY` | `タイトル` |
-| `NOTION_READING_DATE_PROPERTY` | `購入日` |
-| `NOTION_READING_STATUS_PROPERTY` | `ステータス`（Status型、対象値は「読書中」） |
 | `NOTION_WEIGHT_DETAIL_URL` / `NOTION_STEPS_DETAIL_URL` / `NOTION_VITAL_DETAIL_URL` | 各健康DBの一覧URL。空ならリンク省略 |
 
 既存のNotion integrationから追加DBを読み取れることを確認してください。モデル、通知先、スケジュールの設定は変更不要です。本文の意味に関するAIの判断は完全には機械検証できないため、出典のない要約は採用せず、件数・形式・相対日付・出典IDをPHPで検査します。

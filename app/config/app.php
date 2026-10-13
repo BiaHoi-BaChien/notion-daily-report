@@ -209,12 +209,4 @@ return [
         'date_property' => trim((string) $env('NOTION_MEETING_CREATED_PROPERTY', 'Created')),
         'project_property' => trim((string) $env('NOTION_MEETING_PROJECT_PROPERTY', '関連Project')),
     ],
-    'reading' => [
-        'name' => '読書',
-        'role' => '今日の小さな楽しみ',
-        'data_source_id' => trim((string) $env('NOTION_READING_DATA_SOURCE_ID', '')),
-        'title_property' => trim((string) $env('NOTION_READING_TITLE_PROPERTY', 'タイトル')),
-        'date_property' => trim((string) $env('NOTION_READING_DATE_PROPERTY', '購入日')),
-        'status_property' => trim((string) $env('NOTION_READING_STATUS_PROPERTY', 'ステータス')),
-    ],
 ];

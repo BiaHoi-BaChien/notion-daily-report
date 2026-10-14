@@ -110,6 +110,7 @@ Required and optional properties for each source:
 | Child lunch | `状況` | Status or Select | Yes | Reports `お弁当は利用しません` when set to `利用しない` |
 | Child lunch | `曜日` | Rich text, Select, Formula, or Rollup | No | Displayed as supplementary information |
 | Child lunch | `サイズ` | Rich text, Select, Formula, or Rollup | No | Displayed as supplementary information |
+| Child lunch | `お店` | Select recommended; Rich text, Formula, or Rollup also supported | No | Identifies RAMEN KIMURA to hide its total amount in reports |
 | Child lunch | `備考` | Rich text, Select, Formula, or Rollup | No | Displayed as supplementary information |
 | Weight | `日付` | Date | Yes | Measurement date and optional time |
 | Weight | `体重` | Number | Yes | Displayed in kg |
@@ -158,6 +159,8 @@ SMTP settings are optional. Mail is sent only when `MAIL_ENABLED=true` and `SMTP
 Notion report creation is optional. Set `REPORT_NOTION_ENABLED=true` and `REPORT_NOTION_DATA_SOURCE_ID` to save each daily report as a page in a Notion data source. The page body starts with the up-to-three-item daily overview and is generated with Notion blocks: `heading_2`, `heading_3`, icon callouts, linked bullet items, and two-column schedule/task tables (time and linked title, with the group on the next line in gray without a link). Hidden or absent groups add no extra line. If a title/group cell exceeds Notion's 100-rich-text-element limit, its full content continues in following rows with an empty time cell; tables are also split at 100 rows. This layout is shared by mobile and desktop and applies to newly generated reports; existing pages are not rewritten. It intentionally does not use duplicate title headings or `divider` blocks. Configure `REPORT_NOTION_TITLE_PROPERTY`, `REPORT_NOTION_DATE_PROPERTY`, and optional `REPORT_NOTION_RUN_ID_PROPERTY` when your report data source uses different property names.
 
 ## モーニングブリーフ
+
+子供のお弁当の「お店」が `RAMEN KIMURA` の場合、備考先頭の `合計金額: ...` はSlack・メール・NotionレポートとAI要約への入力に表示しません。数量など後続の備考、他店の表示、元のNotionデータは維持します。
 
 - 「今日の要点」は予定の要点最大2件＋「本日期限」の1行。期限の対象は従来どおり「各案件のタスク」です。0件なら期限詳細欄を省略します。取得・解析失敗、または期限ソース未設定の場合は「取得不可」と表示し、取得済みのタスクは残します。
 - 議事録は当日を含む14日間（当日−13日〜当日）、今日のToDo・カレンダー・案件タスクと同じProjectのものだけを対象とします。タイトル内の会議日（YYYY年M月D日、YYYY/M/D、YYYY-M-D）を優先し、なければ登録日を使います。Project未設定は対象外です。

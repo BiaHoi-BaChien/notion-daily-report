@@ -1447,6 +1447,9 @@ final class ReportBuilder
         }
 
         $note = trim((string) ($extra['note'] ?? ''));
+        if (($extra['shop'] ?? '') === 'RAMEN KIMURA') {
+            $note = preg_replace('/\A合計金額: [^、]*(?:、|$)/u', '', $note) ?? $note;
+        }
         if ($note !== '') {
             $parts[] = $note;
         }

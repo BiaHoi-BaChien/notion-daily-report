@@ -43,6 +43,23 @@ final class ConfigTest extends TestCase
         }
     }
 
+    public function testMapsChildLunchShopForReportFormatting(): void
+    {
+        $key = 'NOTION_CHILD_LUNCH_DATA_SOURCE_ID';
+        $original = array_intersect_key($_ENV, [$key => true]);
+
+        try {
+            $_ENV[$key] = 'child-lunch-source';
+            $config = require dirname(__DIR__) . '/app/config/app.php';
+            $sources = array_column($config['sources'], null, 'name');
+
+            self::assertSame('お店', $sources['子供のお弁当']['extra_properties']['shop'] ?? null);
+        } finally {
+            unset($_ENV[$key]);
+            $_ENV += $original;
+        }
+    }
+
     public function testMapsHealthDataSourcesAndPropertyNamesFromEnvironment(): void
     {
         $values = [

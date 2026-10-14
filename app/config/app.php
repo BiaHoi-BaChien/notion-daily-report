@@ -81,6 +81,7 @@ $baseSources = [
         'extra_properties' => [
             'weekday' => '曜日',
             'size' => 'サイズ',
+            'shop' => 'お店',
             'note' => '備考',
         ],
     ],

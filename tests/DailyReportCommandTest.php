@@ -519,6 +519,67 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringNotContainsString('カレー', $report);
     }
 
+    public function testHidesOnlyKimuraTotalAcrossAllReportOutputs(): void
+    {
+        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
+        foreach ([
+            ['RAMEN KIMURA', '合計金額: 80,000 VND', ''],
+            ['RAMEN KIMURA', '合計金額: 160,000 VND、数量: 2', '数量: 2'],
+            ['RAMEN KIMURA', '合計金額: 80,000đ、辛さ控えめ', '辛さ控えめ'],
+            ['RAMEN KIMURA', '合計金額: 160,000 VND、数量: 2、ネギ抜き', '数量: 2、ネギ抜き'],
+            ['RAMEN KIMURA', 'ネギ抜き', 'ネギ抜き'],
+            ['RAMEN KIMURA', '', ''],
+            ['松屋', '合計金額: 80,000 VND、数量: 2', '合計金額: 80,000 VND、数量: 2'],
+            [null, '合計金額: 80,000 VND', '合計金額: 80,000 VND'],
+        ] as [$shop, $note, $expectedNote]) {
+            $page = $this->childLunchPage('チャーハン唐揚げ弁当', '2026-05-11', '月', 'M', $note);
+            if ($shop !== null) {
+                $page['properties']['お店'] = ['type' => 'select', 'select' => ['name' => $shop]];
+            }
+            $notion = new StubNotionClient(['child-lunch-source' => [$page]]);
+            $slack = new StubSlackNotifier();
+            $mail = new StubMailNotifier();
+            $openai = new StubOpenAIClient('今日の予定を確認してください。');
+            $config = $this->childLunchConfig();
+            $config['openai'] = ['enabled' => true];
+            $config['notion_report'] = ['enabled' => true, 'data_source_id' => 'report-source-id'];
+            $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+            $command = new DailyReportCommand(
+                $config,
+                $notion,
+                new PropertyExtractor($timezone),
+                new DateFilter($timezone),
+                new ReportBuilder($timezone),
+                new Logger($logPath, $timezone),
+                $timezone,
+                false,
+                $slack,
+                $openai,
+                $mail
+            );
+
+            self::assertSame(0, $command->run(['daily_report.php', '--date=2026-05-11']));
+            self::assertCount(1, $notion->createdPages);
+            $aiInput = json_decode($openai->receivedSchedule, true, 512, JSON_THROW_ON_ERROR);
+            $expected = '今日の子供のお弁当は「チャーハン唐揚げ弁当 [M]'
+                . ($expectedNote === '' ? '' : ' ' . $expectedNote) . '」です。';
+            foreach ([
+                $slack->sentText,
+                $mail->sentBody,
+                $mail->sentPlainBody,
+                $aiInput['schedule'],
+                json_encode($notion->createdPages[0]['children'], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+            ] as $report) {
+                self::assertStringContainsString($expected, $report);
+                if ($shop === 'RAMEN KIMURA') {
+                    self::assertStringNotContainsString('合計金額', $report);
+                    self::assertStringNotContainsString('80,000', $report);
+                    self::assertStringNotContainsString('160,000', $report);
+                }
+            }
+        }
+    }
+
     public function testReportsUnusedChildLunchEvenWhenNameIsUnordered(): void
     {
         $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
@@ -1851,6 +1912,7 @@ final class DailyReportCommandTest extends TestCase
                     'extra_properties' => [
                         'weekday' => '曜日',
                         'size' => 'サイズ',
+                        'shop' => 'お店',
                         'note' => '備考',
                     ],
                 ],

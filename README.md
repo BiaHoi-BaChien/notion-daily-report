@@ -1,10 +1,10 @@
 # notion-daily-report
 
-PHP 8.1+ CLI batch that reads near-term Notion data-source items, filters and formats them in PHP, asks OpenAI for optional structured highlights and meeting follow-ups, and can send a Japanese daily report to Slack and email.
+PHP 8.5.12+ CLI batch that reads near-term Notion data-source items, filters and formats them in PHP, asks OpenAI for optional structured highlights and meeting follow-ups, and can send a Japanese daily report to Slack and email.
 
 ## Requirements
 
-- PHP 8.1 or newer
+- PHP 8.5.12 or newer
 - Composer
 - A Notion integration token
 - A Notion data source, or a single-data-source database, shared with that integration

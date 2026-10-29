@@ -34,10 +34,10 @@ final class DailyReportCommandTest extends TestCase
         $broken = $task;
         unset($broken['properties']['By when']);
         foreach ([
-            [[], '本日期限：なし', false],
+            [[], null, false],
             [new RuntimeException('Notion unavailable'), '本日期限：取得不可', false],
-            [[$task], '本日期限：1件', true],
-            [[$task, $broken], '本日期限：取得不可（確認済み1件）', true],
+            [[$task], null, true],
+            [[$task, $broken], '本日期限：取得不可', true],
         ] as [$pages, $expected, $hasTasks]) {
             $config = $this->config();
             $config['sources'][] = [
@@ -51,8 +51,12 @@ final class DailyReportCommandTest extends TestCase
             $command = new DailyReportCommand($config, $notion, new PropertyExtractor($tz), new DateFilter($tz), new ReportBuilder($tz), new Logger(sys_get_temp_dir() . '/brief-deadlines.log', $tz), $tz, false, $slack, null, $mail);
             self::assertSame(0, $command->run(['daily_report.php', '--date=2026-09-11']));
             foreach ([$slack->sentText, $mail->sentBody, $mail->sentPlainBody] as $report) {
-                self::assertStringContainsString($expected, $report);
-                self::assertSame($hasTasks, str_contains($report, '⚠ 本日期限のタスク'));
+                if ($expected === null) {
+                    self::assertStringNotContainsString('本日期限：取得不可', $report);
+                } else {
+                    self::assertStringContainsString($expected, $report);
+                }
+                self::assertSame($hasTasks, str_contains($report, '期限タスク'));
             }
         }
     }
@@ -86,10 +90,10 @@ final class DailyReportCommandTest extends TestCase
 
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
-        self::assertStringContainsString('🔥 今日の予定', $report);
+        self::assertStringContainsString('今日の予定', $report);
         self::assertStringContainsString('Today task', $report);
         self::assertStringNotContainsString('Old task', $report);
-        self::assertStringContainsString('📌 近日確認', $report);
+        self::assertStringContainsString('以降の予定', $report);
         self::assertStringContainsString('Upcoming task', $report);
         self::assertFileExists($logPath);
     }
@@ -122,21 +126,15 @@ final class DailyReportCommandTest extends TestCase
                 );
 
                 self::assertSame(0, $command->run(['daily_report.php', '--date=2026-09-21']), $title);
-                if ($aiEnabled) {
-                    $input = json_decode($openai->receivedSchedule, true, 512, JSON_THROW_ON_ERROR);
-                    $overview = explode('🔥 今日の予定', $input['schedule'])[0];
-                    self::assertStringContainsString(PHP_EOL . '・' . $title . PHP_EOL, $overview);
-                } else {
-                    self::assertSame('', $openai->receivedSchedule);
-                }
+                self::assertSame('', $openai->receivedSchedule);
                 foreach ([$slack->sentText, $mail->sentBody, $mail->sentPlainBody] as $report) {
                     self::assertNotNull($report);
-                    $overview = explode('🔥 今日の予定', $report)[0];
-                    self::assertStringContainsString(PHP_EOL . '・' . $title . PHP_EOL, $overview);
+                    self::assertStringContainsString($title, $report);
+                    self::assertStringNotContainsString('今日の要点', $report);
                 }
                 self::assertCount(1, $notion->createdPages);
                 $blocks = $notion->createdPages[0]['children'];
-                self::assertSame($title, $blocks[1]['bulleted_list_item']['rich_text'][0]['text']['content']);
+                self::assertSame($title, $blocks[0]['callout']['children'][0]['bulleted_list_item']['rich_text'][0]['text']['content']);
                 self::assertIsString(json_encode($blocks, JSON_THROW_ON_ERROR));
             }
         }
@@ -152,12 +150,12 @@ final class DailyReportCommandTest extends TestCase
             $item['extra'] = ['birthdate' => '1990-09-21', 'age' => '36'];
             $blocks = $builder->renderNotionBlocks(null, $builder->classifyAndSort([$item], $today), $today);
             $callouts = array_values(array_filter($blocks, static fn (array $block): bool =>
-                ($block['callout']['icon']['emoji'] ?? null) === '🎂'
+                ($block['callout']['rich_text'][0]['text']['content'] ?? null) === 'その他'
             ));
 
             self::assertCount(1, $callouts);
             $richText = $callouts[0]['callout']['children'][0]['bulleted_list_item']['rich_text'];
-            self::assertSame($title . '｜1990年09月21日｜36歳', $richText[0]['text']['content']);
+            self::assertSame('誕生日：' . $title . '｜1990年09月21日｜36歳', $richText[0]['text']['content']);
             self::assertIsString(json_encode($blocks, JSON_THROW_ON_ERROR));
         }
     }
@@ -211,7 +209,7 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringContainsString('08/04（火）', $report);
         self::assertStringContainsString('夏休み（18日目／8月17日まで）', $report);
         self::assertStringNotContainsString('07/18（土）', $report);
-        self::assertSame(9, substr_count($report, '夏休み（')); // Includes the overview.
+        self::assertSame(8, substr_count($report, '夏休み（'));
         self::assertStringContainsString(
             '"date_filter":{"property":"Date","on_or_before":"2026-08-04"}',
             (string) file_get_contents($logPath)
@@ -273,9 +271,9 @@ final class DailyReportCommandTest extends TestCase
 
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
-        self::assertStringContainsString('🔥 今日の予定', $report);
+        self::assertStringContainsString('今日の予定', $report);
         self::assertStringContainsString('Today task', $report);
-        self::assertStringContainsString('📌 近日確認', $report);
+        self::assertStringContainsString('以降の予定', $report);
         self::assertStringContainsString('Meeting prep', $report);
     }
 
@@ -353,7 +351,7 @@ final class DailyReportCommandTest extends TestCase
 
         self::assertSame(0, $command->run(['daily_report.php', '--date=2026-08-12']));
         $report = (string) $slack->sentText;
-        self::assertStringContainsString('🏥 健康', $report);
+        self::assertStringContainsString(str_starts_with($report, '[') ? '健康' : '健康', $report);
         self::assertStringContainsString('8月11日 07:16｜73.25kg', $report);
         self::assertStringNotContainsString("\n歩数\n", str_replace("\r\n", "\n", $report));
         self::assertStringNotContainsString("\nバイタル\n", str_replace("\r\n", "\n", $report));
@@ -455,23 +453,23 @@ final class DailyReportCommandTest extends TestCase
 
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
-        self::assertStringContainsString('🔥 今日の予定', $report);
-        self::assertStringContainsString('時間｜予定｜分類', $report);
-        self::assertStringContainsString('09:30｜<https://notion.example/%E6%B1%BA%E6%B8%88%E7%A2%BA%E8%AA%8D|決済確認>｜決済システム', $report);
-        self::assertStringContainsString('⚠ 本日期限のタスク', $report);
-        self::assertStringContainsString('決済追加確認>｜決済システム', $report);
+        self::assertStringContainsString('今日の予定', $report);
+        self::assertStringNotContainsString('時間｜予定｜分類', $report);
+        self::assertStringContainsString('09:30*  <https://notion.example/%E6%B1%BA%E6%B8%88%E7%A2%BA%E8%AA%8D|決済確認>' . "\n決済システム", $report);
+        self::assertStringContainsString('本日期限', $report);
+        self::assertStringContainsString('決済追加確認>' . "\n決済システム", $report);
         self::assertStringContainsString('楽天ペイV2', $report);
-        self::assertStringContainsString('楽天ペイ表示確認>｜楽天ペイV2', $report);
-        self::assertStringContainsString('📌 近日確認', $report);
-        self::assertStringContainsString('・10:00｜<https://notion.example/%E6%9D%A5%E9%80%B1%E3%81%AE%E7%A2%BA%E8%AA%8D|来週の確認>｜決済システム', $report);
-        self::assertStringContainsString('・10:00 - 11:00｜<https://notion.example/MTG%20K%26G|MTG K&amp;G>', $report);
+        self::assertStringContainsString('楽天ペイ表示確認>' . "\n楽天ペイV2", $report);
+        self::assertStringContainsString('以降の予定', $report);
+        self::assertStringContainsString('・*10:00*  <https://notion.example/%E6%9D%A5%E9%80%B1%E3%81%AE%E7%A2%BA%E8%AA%8D|来週の確認>' . "\n決済システム", $report);
+        self::assertStringContainsString('・*10:00 - 11:00*  <https://notion.example/MTG%20K%26G|MTG K&amp;G>', $report);
         self::assertStringNotContainsString('MTG K&G｜その他', $report);
-        self::assertStringContainsString('・16:00｜<https://notion.example/%E5%A7%94%E5%93%A1%E4%BC%9A%E6%B4%BB%E5%8B%95|委員会活動>｜学校', $report);
-        self::assertStringContainsString('💡 その他トピックス', $report);
+        self::assertStringContainsString('・*16:00*  <https://notion.example/%E5%A7%94%E5%93%A1%E4%BC%9A%E6%B4%BB%E5%8B%95|委員会活動>' . "\n学校", $report);
+        self::assertStringContainsString('その他', $report);
         self::assertStringNotContainsString('  以下の通り祝日があります。', $report);
         self::assertStringContainsString('・<https://notion.example/%E3%83%99%E3%83%88%E3%83%8A%E3%83%A0%E6%9A%A6%E7%9A%84%E5%90%89%E6%97%A5|ベトナム暦的吉日>', $report);
         self::assertStringNotContainsString('ベトナム暦的吉日｜祝日', $report);
-        self::assertStringContainsString('以下の身分証明書の有効期限が近づいています。', $report);
+        self::assertStringContainsString('身分証明書の有効期限', $report);
         self::assertStringContainsString('・<https://notion.example/%E5%9C%A8%E7%95%99%E3%82%AB%E3%83%BC%E3%83%89|在留カード>', $report);
         self::assertStringNotContainsString('在留カード｜身分証明書', $report);
         self::assertSame(1, substr_count($report, '在留カード'));
@@ -509,13 +507,13 @@ final class DailyReportCommandTest extends TestCase
 
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
-        self::assertStringContainsString('💡 その他トピックス', $report);
+        self::assertStringContainsString('その他', $report);
         self::assertStringContainsString(
-            '今日の子供のお弁当は「牛めし（A券：牛めし） [S] つゆだく、ネギ抜き」です。',
+            '子どものお弁当：牛めし（A券：牛めし） [S] つゆだく、ネギ抜き',
             $report
         );
         self::assertStringNotContainsString('05/11（月） 牛めし', $report);
-        self::assertSame(1, substr_count($report, '今日の子供のお弁当は'));
+        self::assertSame(1, substr_count($report, '子どものお弁当：'));
         self::assertStringNotContainsString('カレー', $report);
     }
 
@@ -560,14 +558,13 @@ final class DailyReportCommandTest extends TestCase
 
             self::assertSame(0, $command->run(['daily_report.php', '--date=2026-05-11']));
             self::assertCount(1, $notion->createdPages);
-            $aiInput = json_decode($openai->receivedSchedule, true, 512, JSON_THROW_ON_ERROR);
-            $expected = '今日の子供のお弁当は「チャーハン唐揚げ弁当 [M]'
-                . ($expectedNote === '' ? '' : ' ' . $expectedNote) . '」です。';
+            self::assertSame('', $openai->receivedSchedule);
+            $expected = '子どものお弁当：チャーハン唐揚げ弁当 [M]'
+                . ($expectedNote === '' ? '' : ' ' . $expectedNote);
             foreach ([
                 $slack->sentText,
                 $mail->sentBody,
                 $mail->sentPlainBody,
-                $aiInput['schedule'],
                 json_encode($notion->createdPages[0]['children'], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
             ] as $report) {
                 self::assertStringContainsString($expected, $report);
@@ -650,8 +647,8 @@ final class DailyReportCommandTest extends TestCase
 
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
-        self::assertStringContainsString('⚠ 本日期限のタスク', $report);
-        self::assertStringContainsString('楽天ペイ表示確認>｜楽天ペイV2', $report);
+        self::assertStringContainsString('本日期限', $report);
+        self::assertStringContainsString('楽天ペイ表示確認>' . "\n楽天ペイV2", $report);
         self::assertStringNotContainsString('楽天ペイ表示確認｜その他', $report);
     }
 
@@ -672,7 +669,7 @@ final class DailyReportCommandTest extends TestCase
         $report = $builder->renderSchedule($items, $today);
 
         self::assertStringStartsWith('2026年04月17日（金）' . PHP_EOL, $report);
-        self::assertStringContainsString('09:00｜Exact todo｜', $report);
+        self::assertStringContainsString('09:00  Exact todo', $report);
         self::assertStringNotContainsString('Role-only todo', $report);
         self::assertStringContainsString('・Exact project task', $report);
         self::assertStringNotContainsString('Role-only project task', $report);
@@ -729,24 +726,19 @@ final class DailyReportCommandTest extends TestCase
 
         $report = $builder->renderSchedule($items, $today);
 
-        self::assertStringContainsString('⏰ 明日の時間付き予定', $report);
-        self::assertLessThan(
-            strpos($report, '⏰ 明日の時間付き予定'),
-            strpos($report, '⚠ 本日期限のタスク')
-        );
-        self::assertStringContainsString('時間｜予定｜分類', $report);
-        self::assertStringContainsString('18:00｜楽天ペイ未契約店舗の表示確認｜', $report);
-        self::assertStringNotContainsString('楽天ペイ未契約店舗の表示確認｜その他', $report);
-        self::assertStringContainsString('📌 近日確認', $report);
-        self::assertStringNotContainsString('明日 04/23（木）', $report);
+        self::assertStringNotContainsString('明日の時間付き予定', $report);
+        self::assertStringNotContainsString('時間｜予定｜分類', $report);
+        self::assertStringContainsString('18:00  楽天ペイ未契約店舗の表示確認', $report);
+        self::assertStringContainsString('以降の予定', $report);
+        self::assertStringContainsString('明日 04/23（木）', $report);
         self::assertStringContainsString('あさって 04/24（金）', $report);
-        self::assertStringContainsString('・10:00｜Notion 新機能紹介ウェビナー', $report);
+        self::assertStringContainsString('・10:00  Notion 新機能紹介ウェビナー', $report);
         self::assertStringContainsString('04/29（水）', $report);
         self::assertStringNotContainsString('7日後', $report);
         self::assertStringContainsString('・昭和の日', $report);
         self::assertStringNotContainsString('昭和の日｜祝日', $report);
-        self::assertStringContainsString('💡 その他トピックス', $report);
-        self::assertStringContainsString('以下の身分証明書の有効期限が近づいています。', $report);
+        self::assertStringContainsString('その他', $report);
+        self::assertStringContainsString('身分証明書の有効期限', $report);
         self::assertStringContainsString('06/01（月） あと40日', $report);
         self::assertStringContainsString('・TECHCOMBANK(Debid Card)', $report);
         self::assertStringNotContainsString('TECHCOMBANK(Debid Card)｜身分証明書', $report);
@@ -763,9 +755,9 @@ final class DailyReportCommandTest extends TestCase
         $report = $builder->renderSchedule($builder->classifyAndSort([$birthday], $today), $today);
         $normalizedReport = str_replace(["\r\n", "\r"], "\n", $report);
 
-        self::assertStringContainsString('💡 その他トピックス', $report);
-        self::assertStringNotContainsString('🏥 健康', $report);
-        self::assertStringContainsString("もうすぐ誕生日\n・Nguyen Van A｜1990年07月17日｜36歳", $normalizedReport);
+        self::assertStringContainsString('その他', $report);
+        self::assertStringNotContainsString('健康', $report);
+        self::assertStringContainsString("・誕生日：Nguyen Van A｜1990年07月17日｜36歳", $normalizedReport);
         self::assertSame(1, substr_count($report, 'Nguyen Van A'));
     }
 
@@ -820,7 +812,7 @@ final class DailyReportCommandTest extends TestCase
         ];
 
         foreach ($reports as $report) {
-            self::assertStringContainsString('🏥 健康', $report);
+            self::assertStringContainsString(str_starts_with($report, '[') ? '健康' : '健康', $report);
             self::assertStringContainsString('8月11日 07:16｜73.25kg', $report);
             self::assertStringNotContainsString('8月10日 07:03｜73.2kg', $report);
             self::assertStringNotContainsString('8月9日 08:32｜73.5kg', $report);
@@ -828,7 +820,7 @@ final class DailyReportCommandTest extends TestCase
             self::assertStringContainsString('8月11日｜4,275歩', $report);
             self::assertStringContainsString('8月11日 21:11｜120/80mmHg｜脈拍70回/分', $report);
             self::assertStringNotContainsString('8月11日 07:13｜118/78mmHg｜脈拍0回/分', $report);
-            self::assertLessThan(strpos($report, '💡 その他トピックス'), strpos($report, '🏥 健康'));
+            self::assertLessThan(strpos($report, 'その他'), strpos($report, '健康'));
         }
     }
 
@@ -847,14 +839,14 @@ final class DailyReportCommandTest extends TestCase
         $slackReport = $builder->renderSchedule($items, $today, ReportBuilder::FORMAT_SLACK);
         $htmlReport = $builder->renderSchedule($items, $today, ReportBuilder::FORMAT_HTML);
 
-        self::assertStringContainsString('09:00｜確認 & <連絡>｜', $textReport);
-        self::assertStringContainsString('09:00｜<https://notion.example/page?a=1&b=2|確認 &amp; &lt;連絡&gt;>｜', $slackReport);
+        self::assertStringContainsString('09:00  確認 & <連絡>', $textReport);
+        self::assertStringContainsString('09:00*  <https://notion.example/page?a=1&b=2|確認 &amp; &lt;連絡&gt;>', $slackReport);
         self::assertStringContainsString(
-            '<td><a href="https://notion.example/page?a=1&amp;b=2">確認 &amp; &lt;連絡&gt;</a></td>',
+            '<a href="https://notion.example/page?a=1&amp;b=2">確認 &amp; &lt;連絡&gt;</a>',
             $htmlReport
         );
-        self::assertStringContainsString('10:00｜URLなし｜', $slackReport);
-        self::assertStringContainsString('<td>URLなし</td>', $htmlReport);
+        self::assertStringContainsString('10:00*  URLなし', $slackReport);
+        self::assertStringContainsString('URLなし</li>', $htmlReport);
     }
 
     public function testRendersActiveMultiDayScheduleWithProgressAndEndDate(): void
@@ -879,7 +871,7 @@ final class DailyReportCommandTest extends TestCase
             $htmlReport,
             json_encode($notionBlocks, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
         ] as $report) {
-            self::assertSame(2, substr_count($report, '夏休み（3日目／7月27日まで）'));
+            self::assertSame(1, substr_count($report, '夏休み（3日目／7月27日まで）'));
             self::assertSame(1, substr_count($report, '夏休み（4日目／7月27日まで）'));
             self::assertSame(1, substr_count($report, '夏休み（最終日／7月27日まで）'));
             self::assertStringNotContainsString('07/18（土）', $report);
@@ -888,228 +880,100 @@ final class DailyReportCommandTest extends TestCase
 
     public function testRendersReadableNotionBlocksWithoutDividers(): void
     {
-        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
-        $today = new DateTimeImmutable('2026-04-22', $timezone);
-        $builder = new ReportBuilder($timezone);
-
-        $linked = $this->extractedItem('確認 & <連絡>', '2026-04-22', 'ToDo', '今日やるべき作業の確認', '2026-04-22T09:00:00+07:00');
-        $linked['url'] = 'https://notion.example/page?a=1&b=2';
-        $untimedToday = $this->extractedItem('今日の時間なし予定', '2026-04-22', 'ToDo', '今日やるべき作業の確認', '2026-04-22');
-        $tomorrow = $this->extractedItem('明日の予定', '2026-04-23', 'ToDo', '今日やるべき作業の確認', '2026-04-23T18:00:00+07:00');
-        $tomorrow['project'] = '翌日案件';
-        $deadline = $this->extractedItem('期限タスク', '2026-04-22', '各案件のタスク', '各案件ごとのタスクの確認', '2026-04-22T18:00:00+07:00');
-        $deadline['project'] = '決済システム';
-        $upcoming = $this->extractedItem('来週の確認', '2026-04-24', 'カレンダー', '今日以降1週間の予定の確認', '2026-04-24T10:00:00+07:00');
-        $upcoming['project'] = '案件A';
-        $upcoming['url'] = 'https://notion.example/upcoming';
-        $untimedUpcoming = $this->extractedItem('時間なし予定', '2026-04-24', 'カレンダー', '今日以降1週間の予定の確認', '2026-04-24');
-        $identity = $this->extractedItem('TECHCOMBANK(Debid Card)', '2026-06-01', '身分証明書', '期限切れが迫っている身分証明書の確認', '2026-06-01');
-        $items = $builder->classifyAndSort([$linked, $untimedToday, $tomorrow, $deadline, $upcoming, $untimedUpcoming, $identity], $today);
-
-        $blocks = $builder->renderNotionBlocks('今日のコメント', $items, $today);
-        $types = array_column($blocks, 'type');
-
-        self::assertNotContains('divider', $types);
-        self::assertNotContains('heading_1', $types);
-        self::assertSame('callout', $blocks[0]['type']);
-        self::assertSame('🤖', $blocks[0]['callout']['icon']['emoji']);
-        self::assertContains('heading_2', $types);
-        self::assertContains('heading_3', $types);
+        $tz = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $today = new DateTimeImmutable('2026-04-22', $tz);
+        $builder = new ReportBuilder($tz);
+        $task = $this->extractedItem('確認 & <連絡>', '2026-04-22', 'ToDo', '確認', '2026-04-22T09:00:00+07:00');
+        $task['url'] = 'https://notion.example/task';
+        $task['project'] = '案件A';
+        $tomorrow = $task;
+        $tomorrow['title'] = '明日の予定';
+        $tomorrow['date'] = '2026-04-23';
+        $tomorrow['date_start'] = '2026-04-23T18:00:00+07:00';
+        $deadline = $task;
+        $deadline['title'] = '期限タスク';
+        $deadline['source_name'] = '各案件のタスク';
+        $blocks = $builder->renderNotionBlocks(null, $builder->classifyAndSort([$task, $tomorrow, $deadline], $today), $today);
+        self::assertSame(['今日の予定', '案件動向', '以降の予定'], array_map(static fn (array $block): string => $block['callout']['rich_text'][0]['text']['content'], $blocks));
         foreach ($blocks as $block) {
-            if (($block['type'] ?? null) === 'heading_2') {
-                self::assertSame('yellow_background', $block['heading_2']['color']);
-            }
+            self::assertSame('callout', $block['type']);
+            self::assertArrayNotHasKey('icon', $block['callout']);
+            self::assertSame('default', $block['callout']['color']);
         }
-
-        $deadlineCallouts = array_values(array_filter(
-            $blocks,
-            static fn (array $block): bool => ($block['type'] ?? null) === 'callout'
-                && (($block['callout']['rich_text'][0]['text']['content'] ?? null) === '期限タスク')
-        ));
-        self::assertSame([], $deadlineCallouts);
-
-        $tables = array_values(array_filter(
-            $blocks,
-            static fn (array $block): bool => ($block['type'] ?? null) === 'table'
-        ));
-        self::assertNotEmpty($tables);
-        self::assertFalse($tables[0]['table']['has_column_header']);
-
-        $tableRows = [];
-        foreach ($tables as $table) {
-            self::assertSame(2, $table['table']['table_width']);
-            foreach ($table['table']['children'] as $child) {
-                $cells = $child['table_row']['cells'];
-                self::assertCount(2, $cells);
-                foreach (array_slice($cells[1], 1) as $groupText) {
-                    self::assertSame('gray', $groupText['annotations']['color']);
-                    self::assertNull($groupText['text']['link']);
-                }
-                $tableRows[] = $cells;
-            }
+        $rich = $blocks[0]['callout']['children'][0]['bulleted_list_item']['rich_text'];
+        self::assertSame('09:00  ', $rich[0]['text']['content']);
+        self::assertTrue($rich[0]['annotations']['bold']);
+        self::assertSame('確認 & <連絡>', $rich[1]['text']['content']);
+        self::assertSame(['url' => $task['url']], $rich[1]['text']['link']);
+        self::assertSame("\n案件A", $rich[2]['text']['content']);
+        self::assertSame('gray', $rich[2]['annotations']['color']);
+        self::assertNull($rich[2]['text']['link']);
+        $json = json_encode($blocks, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        self::assertSame(1, substr_count($json, '明日の予定'));
+        self::assertStringContainsString('明日 04/23（木）', $json);
+        self::assertStringContainsString('本日期限', $json);
+        self::assertStringContainsString('期限タスク', $json);
+        foreach (['今日の要点', '明日の時間付き予定', '近日確認', '"type":"table"', '"type":"divider"'] as $removed) {
+            self::assertStringNotContainsString($removed, $json);
         }
-
-        $findTableRow = static function (array $rows, string $title): ?array {
-            foreach ($rows as $row) {
-                if (($row[1][0]['text']['content'] ?? null) === $title) {
-                    return $row;
-                }
-            }
-
-            return null;
-        };
-
-        $linkedRow = $findTableRow($tableRows, '確認 & <連絡>');
-        self::assertNotNull($linkedRow);
-        self::assertSame('09:00', $linkedRow[0][0]['text']['content']);
-        self::assertSame('https://notion.example/page?a=1&b=2', $linkedRow[1][0]['text']['link']['url']);
-        self::assertCount(1, $linkedRow[1]);
-        self::assertNull($findTableRow($tableRows, '今日の時間なし予定'));
-
-        $tomorrowRow = $findTableRow($tableRows, '明日の予定');
-        self::assertNotNull($tomorrowRow);
-        self::assertSame('18:00', $tomorrowRow[0][0]['text']['content']);
-        self::assertSame("\n翌日案件", $tomorrowRow[1][1]['text']['content']);
-
-        $deadlineRow = $findTableRow($tableRows, '期限タスク');
-        self::assertNotNull($deadlineRow);
-        self::assertSame('18:00', $deadlineRow[0][0]['text']['content']);
-        self::assertSame("\n決済システム", $deadlineRow[1][1]['text']['content']);
-
-        $upcomingRow = $findTableRow($tableRows, '来週の確認');
-        self::assertNotNull($upcomingRow);
-        self::assertSame('10:00', $upcomingRow[0][0]['text']['content']);
-        self::assertSame('https://notion.example/upcoming', $upcomingRow[1][0]['text']['link']['url']);
-        self::assertSame("\n案件A", $upcomingRow[1][1]['text']['content']);
-        self::assertNull($findTableRow($tableRows, '時間なし予定'));
-
-        $untimedBulletIndex = null;
-        $untimedTodayBulletIndex = null;
-        $todayTableIndex = null;
-        $upcomingTableIndex = null;
-        foreach ($blocks as $index => $block) {
-            if (($block['type'] ?? null) === 'bulleted_list_item'
-                && (($block['bulleted_list_item']['rich_text'][0]['text']['content'] ?? null) === '時間なし予定')
-            ) {
-                $untimedBulletIndex = $index;
-            }
-
-            if (($block['type'] ?? null) === 'bulleted_list_item'
-                && (($block['bulleted_list_item']['rich_text'][0]['text']['content'] ?? null) === '今日の時間なし予定')
-            ) {
-                $untimedTodayBulletIndex = $index;
-            }
-
-            if (($block['type'] ?? null) !== 'table') {
-                continue;
-            }
-
-            foreach ($block['table']['children'] as $child) {
-                if (($child['table_row']['cells'][1][0]['text']['content'] ?? null) === '確認 & <連絡>') {
-                    $todayTableIndex = $index;
-                }
-
-                if (($child['table_row']['cells'][1][0]['text']['content'] ?? null) === '来週の確認') {
-                    $upcomingTableIndex = $index;
-                    break 2;
-                }
-            }
-        }
-        self::assertNotNull($untimedBulletIndex);
-        self::assertNotNull($untimedTodayBulletIndex);
-        self::assertNotNull($todayTableIndex);
-        self::assertNotNull($upcomingTableIndex);
-        self::assertLessThan($todayTableIndex, $untimedTodayBulletIndex);
-        self::assertLessThan($upcomingTableIndex, $untimedBulletIndex);
-
-        $identityCallouts = array_values(array_filter(
-            $blocks,
-            static fn (array $block): bool => ($block['type'] ?? null) === 'callout'
-                && (($block['callout']['icon']['emoji'] ?? null) === '🪪')
-        ));
-        self::assertNotEmpty($identityCallouts);
-        self::assertSame('heading_3', $identityCallouts[0]['callout']['children'][0]['type']);
-        self::assertSame('bulleted_list_item', $identityCallouts[0]['callout']['children'][1]['type']);
-        self::assertSame(
-            'TECHCOMBANK(Debid Card)',
-            $identityCallouts[0]['callout']['children'][1]['bulleted_list_item']['rich_text'][0]['text']['content']
-        );
     }
 
-    public function testRendersLongNotionTableTitlesAndGroupsWithoutLosingLinksOrUtf8(): void
+    public function testRendersLongNotionTitlesAndGroupsWithoutLosingLinksOrUtf8(): void
     {
-        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
-        $today = new DateTimeImmutable('2026-04-22', $timezone);
-        $builder = new ReportBuilder($timezone);
+        $tz = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $today = new DateTimeImmutable('2026-04-22', $tz);
+        $builder = new ReportBuilder($tz);
         $title = str_repeat('長い日本語のタスク名', 100);
         $group = str_repeat('長い分類名', 150);
-
         foreach ([null, 'https://notion.example/long-title'] as $url) {
-            $item = $this->extractedItem($title, '2026-04-21', 'ToDo', '今日やるべき作業の確認', '2026-04-21T09:00:00+07:00');
-            $item['project'] = $group;
-            $item['url'] = $url;
+            $item = $this->extractedItem($title, '2026-04-21', 'ToDo', '確認', '2026-04-21T09:00:00+07:00');
             $item['date_end'] = '2026-04-22T18:00:00+07:00';
             $item['date_end_has_time'] = true;
+            $item['project'] = $group;
+            $item['url'] = $url;
             $blocks = $builder->renderNotionBlocks(null, $builder->classifyAndSort([$item], $today), $today);
-            $tables = array_values(array_filter($blocks, static fn (array $block): bool => $block['type'] === 'table'));
-            self::assertNotEmpty($tables);
-            $cells = $tables[0]['table']['children'][0]['table_row']['cells'];
-            self::assertCount(2, $cells);
-            $titleText = '';
-            $groupText = '';
-            foreach ($cells[1] as $fragment) {
+            $rich = $blocks[0]['callout']['children'][0]['bulleted_list_item']['rich_text'];
+            $actualTitle = $actualGroup = '';
+            foreach ($rich as $fragment) {
                 self::assertLessThanOrEqual(1800, strlen($fragment['text']['content']));
-                if (($fragment['annotations']['color'] ?? null) === 'gray') {
-                    $groupText .= $fragment['text']['content'];
+                if (($fragment['annotations']['bold'] ?? false) === true) {
+                    continue;
+                }
+                if (($fragment['annotations']['color'] ?? '') === 'gray') {
+                    $actualGroup .= $fragment['text']['content'];
                     self::assertNull($fragment['text']['link']);
                 } else {
-                    $titleText .= $fragment['text']['content'];
+                    $actualTitle .= $fragment['text']['content'];
                     self::assertSame($url === null ? null : ['url' => $url], $fragment['text']['link']);
                 }
             }
-            self::assertSame($title . '（最終日／4月22日まで）', $titleText);
-            self::assertSame("\n" . $group, $groupText);
-            self::assertSame(
-                $titleText . $groupText,
-                implode('', array_column(array_column($cells[1], 'text'), 'content'))
-            );
-            self::assertIsString(json_encode($blocks, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+            self::assertSame($title . '（最終日／4月22日まで）', $actualTitle);
+            self::assertSame("\n" . $group, $actualGroup);
+            self::assertIsString(json_encode($blocks, JSON_THROW_ON_ERROR));
         }
     }
 
-    public function testBoundsNotionTableCellsWithoutDroppingTextOrAnnotations(): void
+    public function testBoundsNotionRichTextWithoutDroppingTextOrAnnotations(): void
     {
-        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
-        $today = new DateTimeImmutable('2026-09-15', $timezone);
-        $builder = new ReportBuilder($timezone);
-
-        foreach ([
-            [99, '', 1],
-            [99, '学校', 1],
-            [100, '学校', 2],
-            [50, str_repeat('い', 30000), 2],
-            [100, str_repeat('い', 59400), 2],
-        ] as [$titleFragments, $group, $expectedRows]) {
-            $title = str_repeat('あ', 600 * $titleFragments);
+        $tz = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $today = new DateTimeImmutable('2026-09-15', $tz);
+        $builder = new ReportBuilder($tz);
+        foreach ([[99, ''], [99, '学校'], [100, '学校'], [50, str_repeat('い', 30000)], [100, str_repeat('い', 59400)]] as [$count, $group]) {
+            $title = str_repeat('あ', 600 * $count);
             $item = $this->extractedItem($title, '2026-09-15', 'ToDo', '確認', '2026-09-15T09:00:00+07:00');
             $item['project'] = $group;
-            $item['url'] = 'https://notion.example/oversized-title';
+            $item['url'] = 'https://notion.example/long';
             $blocks = $builder->renderNotionBlocks(null, $builder->classifyAndSort([$item], $today), $today);
-            $tables = array_values(array_filter($blocks, static fn (array $block): bool => $block['type'] === 'table'));
-            self::assertCount(1, $tables);
-            self::assertCount($expectedRows, $tables[0]['table']['children']);
-            $actualText = '';
-            $actualTitle = '';
-            $actualGroup = '';
-            foreach ($tables[0]['table']['children'] as $index => $row) {
-                $cells = $row['table_row']['cells'];
-                self::assertCount(2, $cells);
-                self::assertLessThanOrEqual(100, count($cells[1]));
-                self::assertSame($index === 0 ? '09:00' : '', $cells[0][0]['text']['content'] ?? '');
-                foreach ($cells[1] as $fragment) {
+            $actualTitle = $actualGroup = '';
+            $times = 0;
+            foreach ($blocks[0]['callout']['children'] as $row) {
+                $rich = $row[$row['type']]['rich_text'];
+                self::assertLessThanOrEqual(100, count($rich));
+                foreach ($rich as $fragment) {
                     self::assertLessThanOrEqual(1800, strlen($fragment['text']['content']));
-                    $actualText .= $fragment['text']['content'];
-                    if (($fragment['annotations']['color'] ?? null) === 'gray') {
+                    if (($fragment['annotations']['bold'] ?? false) === true) {
+                        $times++;
+                    } elseif (($fragment['annotations']['color'] ?? '') === 'gray') {
                         $actualGroup .= $fragment['text']['content'];
                         self::assertNull($fragment['text']['link']);
                     } else {
@@ -1118,159 +982,136 @@ final class DailyReportCommandTest extends TestCase
                     }
                 }
             }
+            self::assertSame(1, $times);
             self::assertSame($title, $actualTitle);
             self::assertSame($group === '' ? '' : "\n" . $group, $actualGroup);
-            self::assertSame($actualTitle . $actualGroup, $actualText);
-            self::assertIsString(json_encode($blocks, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+            self::assertIsString(json_encode($blocks, JSON_THROW_ON_ERROR));
         }
     }
 
-    public function testSplitsNotionTablesWhenContinuationRowsExceedChildLimit(): void
+    public function testSplitsNotionCalloutsWhenRowsExceedChildLimit(): void
     {
-        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
-        $today = new DateTimeImmutable('2026-09-15', $timezone);
-        $builder = new ReportBuilder($timezone);
-
-        foreach ([
-            ['ToDo', '2026-09-15'],
-            ['各案件のタスク', '2026-09-15'],
-            ['ToDo', '2026-09-16'],
-            ['カレンダー', '2026-09-17'],
-        ] as [$source, $date]) {
+        $tz = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $today = new DateTimeImmutable('2026-09-15', $tz);
+        $builder = new ReportBuilder($tz);
+        foreach ([['ToDo', '2026-09-15'], ['各案件のタスク', '2026-09-15'], ['ToDo', '2026-09-16'], ['カレンダー', '2026-09-17']] as [$source, $date]) {
             $items = [];
-            for ($index = 0; $index < 99; $index++) {
-                $items[] = $this->extractedItem(sprintf('予定%03d', $index), $date, $source, '確認', $date . 'T08:00:00+07:00');
+            for ($i = 0; $i < 99; $i++) {
+                $items[] = $this->extractedItem(sprintf('予定%03d', $i), $date, $source, '確認', $date . 'T08:00:00+07:00');
             }
-            $oversized = $this->extractedItem(str_repeat('あ', 30000), $date, $source, '確認', $date . 'T09:00:00+07:00');
-            $oversized['project'] = str_repeat('い', 30000);
-            $items[] = $oversized;
+            $item = $this->extractedItem(str_repeat('あ', 60000), $date, $source, '確認', $date . 'T09:00:00+07:00');
+            $item['project'] = str_repeat('い', 30000);
+            $items[] = $item;
             $items[] = $this->extractedItem('次の予定', $date, $source, '確認', $date . 'T10:00:00+07:00');
             $blocks = $builder->renderNotionBlocks(null, $builder->classifyAndSort($items, $today), $today);
-            $tables = array_values(array_filter($blocks, static fn (array $block): bool => $block['type'] === 'table'));
-            self::assertCount(2, $tables);
-            self::assertCount(100, $tables[0]['table']['children']);
-            self::assertCount(2, $tables[1]['table']['children']);
-            self::assertSame('09:00', $tables[0]['table']['children'][99]['table_row']['cells'][0][0]['text']['content']);
-            self::assertSame([], $tables[1]['table']['children'][0]['table_row']['cells'][0]);
-            self::assertSame('次の予定', $tables[1]['table']['children'][1]['table_row']['cells'][1][0]['text']['content']);
-            foreach ($tables as $table) {
-                self::assertSame(2, $table['table']['table_width']);
-                foreach ($table['table']['children'] as $row) {
-                    self::assertCount(2, $row['table_row']['cells']);
-                    foreach ($row['table_row']['cells'] as $cell) {
-                        self::assertLessThanOrEqual(100, count($cell));
+            foreach ($blocks as $block) {
+                self::assertLessThanOrEqual(100, count($block['callout']['children']));
+                foreach ($block['callout']['children'] as $row) {
+                    self::assertLessThanOrEqual(100, count($row[$row['type']]['rich_text']));
+                }
+            }
+            $json = json_encode($blocks, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+            self::assertStringContainsString('（続き）', $json);
+            self::assertSame(1, substr_count($json, '次の予定'));
+            $titleCount = $groupCount = 0;
+            foreach ($blocks as $block) {
+                foreach ($block['callout']['children'] as $row) {
+                    foreach ($row[$row['type']]['rich_text'] as $fragment) {
+                        $content = ltrim($fragment['text']['content'], "\n");
+                        $titleCount += preg_match('/^あ+$/u', $content) ? substr_count($content, 'あ') : 0;
+                        $groupCount += preg_match('/^い+$/u', $content) ? substr_count($content, 'い') : 0;
                     }
                 }
             }
+            self::assertSame(60000, $titleCount);
+            self::assertSame(30000, $groupCount);
         }
     }
 
     public function testRendersNotionSchoolAndHiddenGroupsAndUntimedDeadline(): void
     {
-        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
-        $today = new DateTimeImmutable('2026-04-22', $timezone);
-        $builder = new ReportBuilder($timezone);
-
-        foreach ([
-            ['カレンダー', '学校', '', '2026-04-22T16:30:00+07:00', '16:30', '学校'],
-            ['カレンダー', '生活', '', '2026-04-22T16:30:00+07:00', '16:30', null],
-            ['ToDo', '', '', '2026-04-22T16:30:00+07:00', '16:30', null],
-            ['各案件のタスク', '', '案件A', '2026-04-22', '', '案件A'],
-        ] as [$source, $genre, $project, $start, $time, $group]) {
+        $tz = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $today = new DateTimeImmutable('2026-04-22', $tz);
+        $builder = new ReportBuilder($tz);
+        foreach ([['カレンダー', '学校', '', '2026-04-22T16:30:00+07:00', '学校'], ['カレンダー', '生活', '', '2026-04-22T16:30:00+07:00', null], ['ToDo', '', '', '2026-04-22T16:30:00+07:00', null], ['各案件のタスク', '', '案件A', '2026-04-22', '案件A']] as [$source, $genre, $project, $start, $group]) {
             $item = $this->extractedItem('確認する予定', '2026-04-22', $source, '確認', $start);
             $item['genre'] = $genre;
             $item['project'] = $project;
             $blocks = $builder->renderNotionBlocks(null, $builder->classifyAndSort([$item], $today), $today);
-            $tables = array_values(array_filter($blocks, static fn (array $block): bool => $block['type'] === 'table'));
-            self::assertCount(1, $tables);
-            $cells = $tables[0]['table']['children'][0]['table_row']['cells'];
-            self::assertCount(2, $cells);
-            self::assertSame($time, $cells[0][0]['text']['content'] ?? '');
-            self::assertSame('確認する予定', $cells[1][0]['text']['content']);
-            self::assertNull($cells[1][0]['text']['link']);
-            if ($group === null) {
-                self::assertCount(1, $cells[1]);
-            } else {
-                self::assertCount(2, $cells[1]);
-                self::assertSame("\n" . $group, $cells[1][1]['text']['content']);
-                self::assertSame('gray', $cells[1][1]['annotations']['color']);
-                self::assertNull($cells[1][1]['text']['link']);
+            $rows = array_values(array_filter($blocks[0]['callout']['children'], static fn (array $row): bool => $row['type'] === 'bulleted_list_item'));
+            self::assertCount(1, $rows);
+            $rich = $rows[0]['bulleted_list_item']['rich_text'];
+            $text = implode('', array_column(array_column($rich, 'text'), 'content'));
+            self::assertSame((str_contains($start, 'T') ? '16:30  ' : '') . '確認する予定' . ($group === null ? '' : "\n" . $group), $text);
+            foreach ($rich as $fragment) {
+                self::assertNull($fragment['text']['link']);
             }
         }
     }
 
     public function testRendersNotionEmptySectionsAsBulletedNoMatchMessage(): void
     {
-        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
-        $today = new DateTimeImmutable('2026-04-22', $timezone);
-        $builder = new ReportBuilder($timezone);
-        $items = $builder->classifyAndSort([
-            $this->extractedItem('今日の確認', '2026-04-22', 'ToDo', '今日やるべき作業の確認', '2026-04-22T09:00:00+07:00'),
-        ], $today);
-
-        $blocks = $builder->renderNotionBlocks(null, $items, $today);
-        $nextBlockAfterHeading = static function (array $blocks, string $heading): ?array {
-            foreach ($blocks as $index => $block) {
-                if (($block['type'] ?? null) !== 'heading_2') {
-                    continue;
-                }
-
-                if (($block['heading_2']['rich_text'][0]['text']['content'] ?? null) === $heading) {
-                    return $blocks[$index + 1] ?? null;
-                }
-            }
-
-            return null;
-        };
-
-        self::assertNull($nextBlockAfterHeading($blocks, '⚠️ 本日期限のタスク'));
-        foreach (['⏰ 明日の時間付き予定', '📌 近日確認'] as $heading) {
-            $block = $nextBlockAfterHeading($blocks, $heading);
-            self::assertSame('bulleted_list_item', $block['type'] ?? null);
-            self::assertSame('該当なし', $block['bulleted_list_item']['rich_text'][0]['text']['content'] ?? null);
-        }
+        $tz = new DateTimeZone('Asia/Ho_Chi_Minh');
+        $today = new DateTimeImmutable('2026-04-22', $tz);
+        $builder = new ReportBuilder($tz);
+        $blocks = $builder->renderNotionBlocks(null, [], $today);
+        self::assertCount(3, $blocks);
+        self::assertSame('該当なし', $blocks[0]['callout']['children'][0]['bulleted_list_item']['rich_text'][0]['text']['content']);
+        self::assertSame('以降の予定', $blocks[2]['callout']['rich_text'][0]['text']['content']);
+        self::assertSame('該当なし', $blocks[2]['callout']['children'][0]['bulleted_list_item']['rich_text'][0]['text']['content']);
     }
 
-    public function testUsesOpenAISummaryForSlackAndMailWhenConfigured(): void
+    public function testSharesProjectTrendsAcrossDeliveryChannelsRegardlessOfNotionSwitch(): void
     {
-        $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
-        $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
-        $slack = new StubSlackNotifier();
-        $mail = new StubMailNotifier();
-        $openai = new StubOpenAIClient('1. 今日やること' . PHP_EOL . '- 要約済みタスク');
-
-        $command = new DailyReportCommand(
-            $this->config(),
-            new StubNotionClient([
-                $this->page('Today task', '2026-04-16', '未着手'),
-            ]),
-            new PropertyExtractor($timezone),
-            new DateFilter($timezone),
-            new ReportBuilder($timezone),
-            new Logger($logPath, $timezone),
-            $timezone,
-            false,
-            $slack,
-            $openai,
-            $mail
-        );
-
-        ob_start();
-        $exitCode = $command->run(['daily_report.php', '--date=2026-04-16']);
-        $output = (string) ob_get_clean();
-        $report = (string) $slack->sentText;
-
-        self::assertSame(0, $exitCode);
-        self::assertSame('', $output);
-        self::assertStringContainsString('要約済みタスク', $report);
-        self::assertStringContainsString('<https://notion.example/Today%20task|Today task>', $report);
-        self::assertStringContainsString('<a href="https://notion.example/Today%20task">Today task</a>', (string) $mail->sentBody);
-        self::assertStringContainsString('Today task', (string) $mail->sentPlainBody);
-        self::assertStringNotContainsString('https://notion.example/Today%20task', (string) $mail->sentPlainBody);
-        self::assertSame('Notion Daily Report 2026-04-16', $mail->sentSubject);
-        self::assertStringContainsString('2026年04月16日（木）', $openai->receivedSchedule);
-        self::assertStringContainsString('Today task', $openai->receivedSchedule);
-        self::assertStringNotContainsString('https://notion.example/Today%20task', $openai->receivedSchedule);
+        foreach ([[false, false], [true, false], [false, true]] as [$notionEnabled, $failAi]) {
+            $tz = new DateTimeZone('Asia/Ho_Chi_Minh');
+            $config = $this->config();
+            $config['notion_report'] = ['enabled' => $notionEnabled, 'data_source_id' => 'report'];
+            $config['meeting_notes'] = ['name' => '議事録', 'role' => '案件動向', 'data_source_id' => 'meetings', 'date_property' => 'Created', 'project_property' => 'Project', 'title_property' => 'Name'];
+            $notion = new StubNotionClient(['source-id' => [$this->page('Today task', '2026-04-16', '未着手')], 'meetings' => [[
+                'id' => 'meeting', 'url' => 'https://notion.example/meeting', 'properties' => [
+                    'Name' => ['type' => 'title', 'title' => [['plain_text' => '2026年4月15日 共有会']]],
+                    'Created' => ['type' => 'created_time', 'created_time' => '2026-04-15T00:00:00Z'],
+                ],
+            ]]]);
+            $notion->blockChildren['meeting'] = [['type' => 'paragraph', 'paragraph' => ['rich_text' => [['plain_text' => '案件Aは4月16日にリリース予定。']]]]];
+            $openai = $failAi ? new FailingOpenAIClient() : new StubOpenAIClient('retired highlight', [[
+                'project' => '案件A', 'timing' => '4/16', 'text' => 'リリース予定。', 'start_date' => '2026-04-16', 'end_date' => '2026-04-16', 'source_id' => 'meeting', 'evidence' => '案件Aは4月16日にリリース予定。',
+            ]]);
+            $slack = new StubSlackNotifier();
+            $mail = new StubMailNotifier();
+            $command = new DailyReportCommand($config, $notion, new PropertyExtractor($tz), new DateFilter($tz), new ReportBuilder($tz), new Logger(sys_get_temp_dir() . '/shared-report-test.log', $tz), $tz, false, $slack, $openai, $mail);
+            self::assertSame(0, $command->run(['daily_report.php', '--date=2026-04-16']));
+            foreach ([$slack->sentText, $mail->sentBody, $mail->sentPlainBody] as $report) {
+                self::assertStringContainsString('今日の予定', $report);
+                self::assertStringContainsString('案件動向', $report);
+                self::assertStringContainsString('以降の予定', $report);
+                self::assertStringContainsString('Today task', $report);
+                self::assertStringNotContainsString('今日の要点', $report);
+                self::assertStringNotContainsString('明日の時間付き予定', $report);
+                if ($failAi) {
+                    self::assertStringContainsString('要約を取得できませんでした。', $report);
+                } else {
+                    self::assertStringContainsString('案件A', $report);
+                    self::assertStringContainsString('4/16｜リリース予定。', $report);
+                    self::assertStringContainsString('https://notion.example/meeting', $report);
+                }
+            }
+            if (!$failAi) {
+                self::assertSame(1, $openai->trendCalls);
+                self::assertSame('', $openai->receivedSchedule);
+                $input = json_decode($openai->receivedProjectTrends, true, 512, JSON_THROW_ON_ERROR);
+                self::assertSame('2026-04-16', $input['report_date']);
+                self::assertCount(1, $input['meeting_notes']);
+                self::assertStringNotContainsString('Today task', $openai->receivedProjectTrends);
+                self::assertStringNotContainsString('https://notion.example/meeting', $openai->receivedProjectTrends);
+            }
+            self::assertSame('Notion Daily Report 2026-04-16', $mail->sentSubject);
+            self::assertCount($notionEnabled ? 1 : 0, $notion->createdPages);
+            if ($notionEnabled) {
+                self::assertStringContainsString('リリース予定。', $notion->createdPages[0]['markdown']);
+            }
+        }
     }
 
     public function testSwitchesDisableOpenAISlackAndMail(): void
@@ -1353,8 +1194,8 @@ final class DailyReportCommandTest extends TestCase
         self::assertSame('Notion Daily Report 2026-04-16', $notion->createdPages[0]['properties']['レポート名']['title'][0]['text']['content']);
         self::assertSame('2026-04-16', $notion->createdPages[0]['properties']['対象日']['date']['start']);
         self::assertArrayHasKey('Run ID', $notion->createdPages[0]['properties']);
-        self::assertSame('heading_2', $notion->createdPages[0]['children'][0]['type']);
-        self::assertSame('今日の要点', $notion->createdPages[0]['children'][0]['heading_2']['rich_text'][0]['text']['content']);
+        self::assertSame('callout', $notion->createdPages[0]['children'][0]['type']);
+        self::assertSame('今日の予定', $notion->createdPages[0]['children'][0]['callout']['rich_text'][0]['text']['content']);
 
         $log = (string) file_get_contents($logPath);
         self::assertStringContainsString('notion_report_created', $log);
@@ -1651,10 +1492,11 @@ final class DailyReportCommandTest extends TestCase
         self::assertStringContainsString('"report_size_bytes"', $log);
     }
 
-    public function testPassesProjectToOpenAISummary(): void
+    public function testShowsProjectWithoutRetiredScheduleSummary(): void
     {
         $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
+        $slack = new StubSlackNotifier();
         $openai = new StubOpenAIClient('1. 今日の概要' . PHP_EOL . '- 決済システムの確認があります。');
         $config = $this->config();
         $config['sources'][0]['project_property'] = '関連プロジェクト';
@@ -1670,7 +1512,7 @@ final class DailyReportCommandTest extends TestCase
             new Logger($logPath, $timezone),
             $timezone,
             false,
-            null,
+            $slack,
             $openai
         );
 
@@ -1679,10 +1521,11 @@ final class DailyReportCommandTest extends TestCase
         ob_end_clean();
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('終日｜Today task｜決済システム', $openai->receivedSchedule);
+        self::assertSame('', $openai->receivedSchedule);
+        self::assertStringContainsString('決済システム', (string) $slack->sentText);
     }
 
-    public function testPassesCalendarGenreToOpenAISummary(): void
+    public function testShowsCalendarGenreWithoutRetiredScheduleSummary(): void
     {
         $timezone = new DateTimeZone('Asia/Ho_Chi_Minh');
         $logPath = sys_get_temp_dir() . '/notion-daily-report-test-' . uniqid('', true) . '.log';
@@ -1713,15 +1556,15 @@ final class DailyReportCommandTest extends TestCase
 
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
-        self::assertStringContainsString('お子様の学校の予定があります。', $report);
+        self::assertStringNotContainsString('お子様の学校の予定があります。', $report);
         self::assertStringContainsString('<https://notion.example/%E5%A7%94%E5%93%A1%E4%BC%9A%E6%B4%BB%E5%8B%95|委員会活動>', $report);
         self::assertStringContainsString(
             '<a href="https://notion.example/%E5%A7%94%E5%93%A1%E4%BC%9A%E6%B4%BB%E5%8B%95">委員会活動</a>',
             (string) $mail->sentBody
         );
         self::assertStringContainsString('委員会活動', (string) $mail->sentPlainBody);
-        self::assertStringContainsString('委員会活動', $openai->receivedSchedule);
-        self::assertStringContainsString('委員会活動｜学校', $openai->receivedSchedule);
+        self::assertSame('', $openai->receivedSchedule);
+        self::assertStringContainsString('学校', $report);
     }
 
     public function testFallsBackToLocalReportWhenOpenAISummaryFails(): void
@@ -1753,8 +1596,8 @@ final class DailyReportCommandTest extends TestCase
         self::assertSame(0, $exitCode);
         self::assertSame('', $output);
         self::assertStringContainsString('Today task', $report);
-        self::assertStringContainsString('🔥 今日の予定', $report);
-        self::assertStringContainsString('openai_summary_failed', (string) file_get_contents($logPath));
+        self::assertStringContainsString('今日の予定', $report);
+        self::assertStringContainsString('project_trends_summary_complete', (string) file_get_contents($logPath));
     }
 
     /**
@@ -2259,7 +2102,7 @@ final class StubNotionClient implements NotionClientInterface
         return $this->blockChildren[$blockId] ?? [];
     }
 
-    public function createPage(string $dataSourceId, array $properties, array $children = []): array
+    public function createPage(string $dataSourceId, array $properties, array $children = [], ?string $markdown = null): array
     {
         if ($this->createException !== null) {
             throw $this->createException;
@@ -2269,6 +2112,7 @@ final class StubNotionClient implements NotionClientInterface
             'data_source_id' => $dataSourceId,
             'properties' => $properties,
             'children' => $children,
+            'markdown' => $markdown,
         ];
 
         return [
@@ -2296,8 +2140,10 @@ final class StubSlackNotifier implements SlackNotifierInterface
 final class StubOpenAIClient implements OpenAIClientInterface
 {
     public string $receivedSchedule = '';
+    public string $receivedProjectTrends = '';
+    public int $trendCalls = 0;
 
-    public function __construct(private readonly string $summary)
+    public function __construct(private readonly string $summary, private readonly array $trends = [])
     {
     }
 
@@ -2311,6 +2157,13 @@ final class StubOpenAIClient implements OpenAIClientInterface
         $this->receivedSchedule = $schedule;
         return json_encode(['highlights' => array_slice(explode(PHP_EOL, $this->summary), 0, 2), 'meeting_points' => []], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
     }
+
+    public function summarizeProjectTrends(string $meetings): string
+    {
+        $this->receivedProjectTrends = $meetings;
+        $this->trendCalls++;
+        return json_encode(['project_trends' => $this->trends], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    }
 }
 
 final class FailingOpenAIClient implements OpenAIClientInterface
@@ -2321,6 +2174,11 @@ final class FailingOpenAIClient implements OpenAIClientInterface
     }
 
     public function summarize(string $schedule): string
+    {
+        throw new OpenAIException('OpenAI model is not available.');
+    }
+
+    public function summarizeProjectTrends(string $meetings): string
     {
         throw new OpenAIException('OpenAI model is not available.');
     }

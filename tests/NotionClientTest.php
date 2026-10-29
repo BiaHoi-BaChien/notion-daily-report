@@ -15,6 +15,21 @@ use PHPUnit\Framework\TestCase;
 
 final class NotionClientTest extends TestCase
 {
+    public function testCreatesMarkdownV2PageWithoutSendingOrAppendingDuplicateChildren(): void
+    {
+        $history = [];
+        $stack = HandlerStack::create(new MockHandler([new Response(200, [], '{"id":"page"}') ]));
+        $stack->push(Middleware::history($history));
+        $client = new NotionClient('test-key', '2026-03-11', 30, new Client(['handler' => $stack]));
+        $markdown = '<callout icon="">' . "\n<b>今日の予定</b>\n\n- 09:00 予定\n</callout>";
+        $client->createPage('source', [], array_fill(0, 101, ['type' => 'paragraph', 'paragraph' => ['rich_text' => []]]), $markdown);
+        self::assertCount(1, $history);
+        $body = json_decode((string) $history[0]['request']->getBody(), true);
+        self::assertSame($markdown, $body['markdown']);
+        self::assertSame('v2', $body['markdown_version']);
+        self::assertArrayNotHasKey('children', $body);
+    }
+
     public function testReadsNestedPaginatedBlocksWithoutFollowingLinkedPages(): void
     {
         $history = [];

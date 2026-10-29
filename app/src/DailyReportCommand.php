@@ -36,11 +36,14 @@ final class DailyReportCommand
      */
     private array $pageTitleCache = [];
 
+    private bool $previewNotion = false;
+
     /**
      * @param array<int, string> $argv
      */
     public function run(array $argv): int
     {
+        $this->previewNotion = in_array('--preview-notion', $argv, true);
         $startedAt = new DateTimeImmutable('now', $this->timezone);
         $startedAtFloat = microtime(true);
         $runId = uniqid('daily_report_', true);
@@ -52,6 +55,9 @@ final class DailyReportCommand
 
         try {
             $today = $this->resolveToday($argv);
+            if ($this->previewNotion && !$this->notionReportIsConfigured()) {
+                throw new ConfigException('Notion preview requires a configured Notion report destination.');
+            }
             $sources = $this->enabledSources();
             $items = [];
             $sourceStatus = [];
@@ -114,15 +120,10 @@ final class DailyReportCommand
 
             $classified = $this->reportBuilder->classifyAndSort($items, $today);
             $contextBuilder = new BriefContextBuilder($this->notionClient, $this->propertyExtractor, $this->timezone, $this->logger);
-            $brief = $contextBuilder->load($this->config, $classified, $today, $runId);
+            $classified = $this->loadHealthComparisons($classified, $today, $runId);
+            $brief = $this->buildReportBrief($contextBuilder, $today, $runId);
             $brief['source_status'] = $sourceStatus + ['各案件のタスク' => false];
-            $aiItems = array_values(array_filter($classified, static fn (array $item): bool => ($item['health_metric'] ?? null) === null));
-            $aiInput = json_encode([
-                'report_date' => $today->format('Y-m-d'),
-                'schedule' => $this->reportBuilder->renderSchedule($aiItems, $today, ReportBuilder::FORMAT_TEXT, ['source_status' => $brief['source_status']]),
-                'meeting_notes' => array_values(array_map(static fn (array $note): array => array_diff_key($note, ['url' => true]), $brief['meetings'])),
-            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-            $apiSendCount = $this->shouldSummarizeWithOpenAI($aiItems) ? 1 : 0;
+            $apiSendCount = $this->shouldSummarizeWithOpenAI($brief['meetings']) ? 1 : 0;
 
             $this->logger->info('daily_report_filtered', [
                 'run_id' => $runId,
@@ -138,14 +139,18 @@ final class DailyReportCommand
                 'api_send_count' => $apiSendCount,
             ]);
 
-            $comment = $this->buildNotificationComment($aiItems, $aiInput, $runId);
-            $brief = $contextBuilder->applySummary($comment, $brief, $runId);
             $report = $this->reportBuilder->renderSchedule($classified, $today, ReportBuilder::FORMAT_TEXT, $brief);
             $slackReport = $this->reportBuilder->renderSchedule($classified, $today, ReportBuilder::FORMAT_SLACK, $brief);
             $mailHtmlReport = $this->reportBuilder->renderSchedule($classified, $today, ReportBuilder::FORMAT_HTML, $brief);
             $notionReportResult = $this->saveNotionReport(null, $classified, $today, $runId, $brief);
-            $slackStatus = $this->sendSlackReport($slackReport, $runId);
-            $mailStatus = $this->sendMailReport($mailHtmlReport, $report, $today, $runId);
+            $slackStatus = $this->previewNotion ? 'disabled' : $this->sendSlackReport($slackReport, $runId);
+            $mailStatus = $this->previewNotion ? 'disabled' : $this->sendMailReport($mailHtmlReport, $report, $today, $runId);
+            if ($this->previewNotion) {
+                if ($notionReportResult['status'] !== 'sent') {
+                    throw new ConfigException('Notion preview page creation failed. See the log for details.');
+                }
+                echo $notionReportResult['page_url'] . PHP_EOL;
+            }
 
             $this->logger->info('daily_report_end', [
                 'run_id' => $runId,
@@ -200,6 +205,68 @@ final class DailyReportCommand
         }
 
         return $parsed;
+    }
+
+    private function notionReportIsConfigured(): bool
+    {
+        return (($this->config['notion_report']['enabled'] ?? false) === true || $this->previewNotion)
+            && trim((string) ($this->config['notion_report']['data_source_id'] ?? '')) !== '';
+    }
+
+    private function buildReportBrief(BriefContextBuilder $builder, DateTimeImmutable $today, string $runId): array
+    {
+        $brief = $builder->loadRecentMeetings($this->config, $today, $runId);
+        $summary = null;
+        if ($brief['meetings'] !== [] && $this->isFeatureEnabled('openai') && $this->openAIClient?->isConfigured()) {
+            $this->logger->info('project_trends_summary_prepared', ['run_id' => $runId, 'meeting_count' => count($brief['meetings']), 'api_send_count' => 1]);
+            try {
+                $summary = $this->openAIClient->summarizeProjectTrends(json_encode([
+                    'report_date' => $today->format('Y-m-d'),
+                    'meeting_notes' => array_values(array_map(static fn (array $note): array => array_diff_key($note, ['url' => true]), $brief['meetings'])),
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+            } catch (Throwable $exception) {
+                $this->logger->error('project_trends_summary_failed', ['run_id' => $runId, 'exception_class' => $exception::class]);
+            }
+        }
+        $brief = $builder->applyProjectTrends($summary, $brief, $today, $runId);
+        $this->logger->info('project_trends_summary_complete', ['run_id' => $runId, 'trend_count' => count($brief['project_trends']), 'available' => !isset($brief['project_trends_error'])]);
+        return $brief;
+    }
+
+    private function loadHealthComparisons(array $items, DateTimeImmutable $today, string $runId): array
+    {
+        foreach ($items as $index => $item) {
+            $metric = $item['health_metric'] ?? '';
+            if (!in_array($metric, ['weight', 'steps'], true)) {
+                continue;
+            }
+            foreach ($this->enabledSources() as $source) {
+                if (($source['health_metric'] ?? '') !== $metric) {
+                    continue;
+                }
+                try {
+                    $filter = $this->notionDateFilter($source, $today);
+                    $cutoff = $metric === 'steps'
+                        ? (new DateTimeImmutable($item['date'], $this->timezone))->setTime(0, 0)->format(DATE_ATOM)
+                        : $item['date_start'];
+                    $filter['and'][0]['date'] = ['before' => $cutoff];
+                    $pages = $this->notionClient->queryDataSource($source['data_source_id'], $source['filter_property_ids'] ?? [], $filter, $this->notionSorts($source), 1);
+                    if ($pages !== []) {
+                        $previous = $this->propertyExtractor->extract($pages[0], $source);
+                        $previousCutoff = $metric === 'steps' ? $previous['date'] : $previous['date_start'];
+                        $isEarlier = $metric === 'steps' ? $previousCutoff < $item['date']
+                            : $previousCutoff !== null && new DateTimeImmutable($previousCutoff) < new DateTimeImmutable($cutoff);
+                        if ($previousCutoff !== null && $isEarlier && $this->hasCompleteHealthNumbers($previous, $source)) {
+                            $items[$index]['previous_measurement'] = $previous;
+                        }
+                    }
+                } catch (Throwable $exception) {
+                    $this->logger->error('health_comparison_failed', ['run_id' => $runId, 'metric' => $metric, 'exception_class' => $exception::class]);
+                }
+                break;
+            }
+        }
+        return $items;
     }
 
     /**
@@ -576,45 +643,6 @@ final class DailyReportCommand
     /**
      * @param array<int, array<string, mixed>> $items
      */
-    private function buildNotificationComment(array $items, string $schedule, string $runId): ?string
-    {
-        if (!$this->shouldSummarizeWithOpenAI($items)) {
-            $this->logger->info('openai_summary_skipped', [
-                'run_id' => $runId,
-                'reason' => $this->openAISkipReason($items),
-            ]);
-            return null;
-        }
-
-        $this->logger->info('openai_payload_prepared', [
-            'run_id' => $runId,
-            'api_send_count' => 1,
-            'schedule_size_bytes' => strlen($schedule),
-        ]);
-
-        try {
-            $summary = $this->openAIClient?->summarize($schedule) ?? '';
-        } catch (OpenAIException $exception) {
-            $this->logger->error('openai_summary_failed', [
-                'run_id' => $runId,
-                'exception_class' => $exception::class,
-                'error' => $exception->getMessage(),
-                'fallback' => 'local_report',
-            ]);
-            return null;
-        }
-
-        $this->logger->info('openai_summary_complete', [
-            'run_id' => $runId,
-            'summary_length_bytes' => strlen($summary),
-        ]);
-
-        return $summary;
-    }
-
-    /**
-     * @param array<int, array<string, mixed>> $items
-     */
     private function shouldSummarizeWithOpenAI(array $items): bool
     {
         return $items !== []
@@ -625,28 +653,12 @@ final class DailyReportCommand
 
     /**
      * @param array<int, array<string, mixed>> $items
-     */
-    private function openAISkipReason(array $items): string
-    {
-        if ($items === []) {
-            return 'No filtered items.';
-        }
-
-        if (!$this->isFeatureEnabled('openai')) {
-            return 'OpenAI summary is disabled.';
-        }
-
-        return 'OPENAI_API_KEY is not configured.';
-    }
-
-    /**
-     * @param array<int, array<string, mixed>> $items
      * @return array{status: string, page_id: ?string, page_url: ?string}
      */
     private function saveNotionReport(?string $comment, array $items, DateTimeImmutable $today, string $runId, array $brief = []): array
     {
         $reportConfig = $this->config['notion_report'] ?? [];
-        if (!is_array($reportConfig) || ($reportConfig['enabled'] ?? false) !== true) {
+        if (!is_array($reportConfig) || (($reportConfig['enabled'] ?? false) !== true && !$this->previewNotion)) {
             $this->logger->info('notion_report_skipped', [
                 'run_id' => $runId,
                 'reason' => 'Notion report creation is disabled.',
@@ -663,12 +675,12 @@ final class DailyReportCommand
             return ['status' => 'not_configured', 'page_id' => null, 'page_url' => null];
         }
 
-        $title = sprintf('Notion Daily Report %s', $today->setTimezone($this->timezone)->format('Y-m-d'));
+        $title = sprintf('Notion Daily Report %s', $today->setTimezone($this->timezone)->format('Y-m-d')) . ($this->previewNotion ? '（確認用）' : '');
         $properties = $this->notionReportProperties($reportConfig, $title, $today, $runId);
         $children = $this->reportBuilder->renderNotionBlocks($comment, $items, $today, $brief);
 
         try {
-            $page = $this->notionClient->createPage($dataSourceId, $properties, $children);
+            $page = $this->notionClient->createPage($dataSourceId, $properties, $children, $this->reportBuilder->renderNotionMarkdown($children));
         } catch (Throwable $exception) {
             $this->logger->error('notion_report_failed', [
                 'run_id' => $runId,
@@ -752,7 +764,7 @@ final class DailyReportCommand
         DateTimeImmutable $today,
         string $runId
     ): void {
-        if (!$this->isFeatureEnabled('mail')) {
+        if ($this->previewNotion || !$this->isFeatureEnabled('mail')) {
             $this->logger->info('notion_report_failure_mail_skipped', [
                 'run_id' => $runId,
                 'reason' => 'Mail notification is disabled.',

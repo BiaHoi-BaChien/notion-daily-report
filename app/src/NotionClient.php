@@ -240,7 +240,7 @@ final class NotionClient implements NotionClientInterface
      * @param array<int, array<string, mixed>> $children
      * @return array<string, mixed>
      */
-    public function createPage(string $dataSourceId, array $properties, array $children = []): array
+    public function createPage(string $dataSourceId, array $properties, array $children = [], ?string $markdown = null): array
     {
         $this->assertConfigured($dataSourceId);
         $dataSourceId = trim($dataSourceId);
@@ -258,7 +258,10 @@ final class NotionClient implements NotionClientInterface
         ];
 
         $initialChildren = array_slice($children, 0, self::MAX_CHILDREN_PER_REQUEST);
-        if ($initialChildren !== []) {
+        if ($markdown !== null) {
+            $payload['markdown'] = $markdown;
+            $payload['markdown_version'] = 'v2';
+        } elseif ($initialChildren !== []) {
             $payload['children'] = $initialChildren;
         }
 
@@ -279,7 +282,7 @@ final class NotionClient implements NotionClientInterface
 
         $page = $this->decodeResponse($response);
         $pageId = isset($page['id']) && is_string($page['id']) ? $page['id'] : '';
-        $remainingChildren = array_slice($children, self::MAX_CHILDREN_PER_REQUEST);
+        $remainingChildren = $markdown === null ? array_slice($children, self::MAX_CHILDREN_PER_REQUEST) : [];
         if ($pageId !== '' && $remainingChildren !== []) {
             $this->appendBlockChildren($pageId, $remainingChildren);
         }

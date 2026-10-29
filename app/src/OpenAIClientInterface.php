@@ -9,4 +9,6 @@ interface OpenAIClientInterface
     public function isConfigured(): bool;
 
     public function summarize(string $schedule): string;
+
+    public function summarizeProjectTrends(string $meetings): string;
 }

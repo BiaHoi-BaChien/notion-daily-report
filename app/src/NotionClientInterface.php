@@ -33,5 +33,5 @@ interface NotionClientInterface
      * @param array<int, array<string, mixed>> $children
      * @return array<string, mixed>
      */
-    public function createPage(string $dataSourceId, array $properties, array $children = []): array;
+    public function createPage(string $dataSourceId, array $properties, array $children = [], ?string $markdown = null): array;
 }

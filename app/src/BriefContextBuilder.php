@@ -12,6 +12,8 @@ use Throwable;
 
 final class BriefContextBuilder
 {
+    private array $projectNames = [];
+
     public function __construct(
         private readonly NotionClientInterface $notion,
         private readonly PropertyExtractor $extractor,
@@ -41,7 +43,21 @@ final class BriefContextBuilder
         return $brief;
     }
 
-    private function meetings(array $source, array $items, DateTimeImmutable $today): array
+    public function loadRecentMeetings(array $config, DateTimeImmutable $today, string $runId): array
+    {
+        $source = $config['meeting_notes'] ?? [];
+        if (trim((string) ($source['data_source_id'] ?? '')) === '') {
+            return ['meetings' => [], 'project_trends_error' => '議事録が未設定です。'];
+        }
+        try {
+            return ['meetings' => $this->meetings($source, [], $today->setTimezone($this->timezone)->setTime(0, 0), true)];
+        } catch (Throwable $exception) {
+            $this->logger->error('project_trends_source_failed', ['run_id' => $runId, 'exception_class' => $exception::class]);
+            return ['meetings' => [], 'project_trends_error' => '議事録を取得できませんでした。'];
+        }
+    }
+
+    private function meetings(array $source, array $items, DateTimeImmutable $today, bool $allProjects = false): array
     {
         $projectIds = [];
         foreach ($items as $item) {
@@ -52,7 +68,7 @@ final class BriefContextBuilder
             }
         }
         $projectIds = array_values(array_unique($projectIds));
-        if ($projectIds === []) {
+        if ($projectIds === [] && !$allProjects) {
             return [];
         }
         // The current date plus the preceding 13 local calendar days.
@@ -61,14 +77,17 @@ final class BriefContextBuilder
         $projectFilters = array_map(static fn (string $id): array => [
             'property' => $source['project_property'], 'relation' => ['contains' => $id],
         ], $projectIds);
-        $pages = $this->notion->queryDataSource($source['data_source_id'], [], ['and' => [
-            ['timestamp' => 'created_time', 'created_time' => ['before' => $end->format(DATE_ATOM)]],
-            count($projectFilters) === 1 ? $projectFilters[0] : ['or' => $projectFilters],
-        ]], [['timestamp' => 'created_time', 'direction' => 'descending']]);
+        $conditions = [['timestamp' => 'created_time', 'created_time' => ['before' => $end->format(DATE_ATOM)]]];
+        if ($allProjects) {
+            $conditions[] = ['timestamp' => 'created_time', 'created_time' => ['on_or_after' => $start->format(DATE_ATOM)]];
+        } else {
+            $conditions[] = count($projectFilters) === 1 ? $projectFilters[0] : ['or' => $projectFilters];
+        }
+        $pages = $this->notion->queryDataSource($source['data_source_id'], [], ['and' => $conditions], [['timestamp' => 'created_time', 'direction' => 'descending']]);
         $notes = [];
         foreach ($pages as $page) {
             $note = $this->extractor->extract($page, $source);
-            if (array_intersect($projectIds, $note['project_relation_ids']) === []) {
+            if (!$allProjects && array_intersect($projectIds, $note['project_relation_ids']) === []) {
                 continue;
             }
             $sourceDate = $this->sourceDate($note);
@@ -106,10 +125,116 @@ final class BriefContextBuilder
                     'url' => $note['url'],
                     'content' => implode("\n", $lines),
                 ];
+                if ($allProjects) {
+                    $notes[$id]['projects'] = $this->meetingProjectNames($note);
+                }
             }
         }
         uasort($notes, static fn (array $a, array $b): int => [$b['date'], $b['source_id']] <=> [$a['date'], $a['source_id']]);
         return $notes;
+    }
+
+    private function meetingProjectNames(array $note): array
+    {
+        $names = trim((string) ($note['project'] ?? '')) === '' ? [] : [$note['project']];
+        foreach ($note['project_relation_ids'] ?? [] as $id) {
+            if (isset($this->projectNames[$id])) {
+                array_push($names, ...$this->projectNames[$id]);
+                continue;
+            }
+            $resolved = [];
+            try {
+                $page = $this->notion->retrievePage($id);
+            } catch (Throwable $exception) {
+                $this->projectNames[$id] = [];
+                $this->logger->error('project_trends_project_failed', ['page_id' => $id, 'exception_class' => $exception::class]);
+                continue;
+            }
+            foreach ($page['properties'] ?? [] as $property) {
+                if (($property['type'] ?? '') === 'title') {
+                    $title = trim(implode('', array_map(static fn (array $chunk): string => (string) ($chunk['plain_text'] ?? $chunk['text']['content'] ?? ''), $property['title'] ?? [])));
+                    if ($title !== '') {
+                        $resolved[] = $title;
+                    }
+                }
+            }
+            $this->projectNames[$id] = $resolved;
+            array_push($names, ...$resolved);
+        }
+        return array_values(array_unique($names));
+    }
+
+    public function applyProjectTrends(?string $json, array $brief, DateTimeImmutable $today, string $runId): array
+    {
+        $brief['project_trends'] = [];
+        if ($brief['meetings'] === []) {
+            return $brief;
+        }
+        if ($json === null) {
+            $brief['project_trends_error'] = '要約を取得できませんでした。';
+            return $brief;
+        }
+        try {
+            $summary = json_decode($json, false, 32, JSON_THROW_ON_ERROR);
+            if (!$summary instanceof \stdClass || !is_array($summary->project_trends ?? null) || count($summary->project_trends) > 5) {
+                throw new OpenAIException('Invalid project trends structure.');
+            }
+            $trends = [];
+            $invalidCount = 0;
+            foreach ($summary->project_trends as $trend) {
+                try {
+                    $validated = $this->validateProjectTrend($trend, $brief['meetings'], $today);
+                    if ($validated !== null) {
+                        $trends[$validated['project'] . '\n' . $validated['timing'] . '\n' . $validated['text']] = $validated;
+                    }
+                } catch (Throwable $exception) {
+                    $invalidCount++;
+                    $this->logger->error('project_trend_invalid', ['run_id' => $runId, 'reason' => $exception->getMessage()]);
+                }
+            }
+            if ($trends === [] && $invalidCount > 0) {
+                $brief['project_trends_error'] = '要約の形式または出典を確認できませんでした。';
+            }
+            $brief['project_trends'] = array_values($trends);
+        } catch (Throwable $exception) {
+            $brief['project_trends_error'] = '要約の形式または出典を確認できませんでした。';
+            $this->logger->error('project_trends_invalid', ['run_id' => $runId, 'exception_class' => $exception::class]);
+        }
+        return $brief;
+    }
+
+    private function validateProjectTrend(mixed $trend, array $meetings, DateTimeImmutable $today): ?array
+    {
+        if (!$trend instanceof \stdClass || !is_string($trend->source_id ?? null) || !isset($meetings[$trend->source_id])) {
+            throw new OpenAIException('Invalid project trend source.');
+        }
+        $note = $meetings[$trend->source_id];
+        $project = $this->summaryText($trend->project ?? null);
+        $timing = $this->summaryText($trend->timing ?? null);
+        $text = $this->summaryText($trend->text ?? null);
+        $evidence = $trend->evidence ?? null;
+        if (!is_string($evidence) || trim($evidence) === '' || !str_contains($note['content'], $evidence)
+            || !str_contains($note['title'] . '\n' . $note['content'] . '\n' . implode('\n', $note['projects'] ?? []), $project)
+            || preg_match('/本日|今日|明日|昨日|今週|来週|再来週|来月|来年/u', $timing . $text)
+        ) {
+            throw new OpenAIException('Project trend is not grounded in its source.');
+        }
+        $dates = [];
+        foreach (['start_date', 'end_date'] as $key) {
+            $value = $trend->$key ?? null;
+            $parsed = is_string($value) ? DateTimeImmutable::createFromFormat('!Y-m-d', $value, $this->timezone) : false;
+            if (!$parsed || $parsed->format('Y-m-d') !== $value) {
+                throw new OpenAIException('Invalid project trend date.');
+            }
+            $dates[$key] = $value;
+        }
+        if ($dates['start_date'] > $dates['end_date']) {
+            throw new OpenAIException('Invalid project trend date range.');
+        }
+        if ($dates['end_date'] < $today->setTimezone($this->timezone)->format('Y-m-d')) {
+            return null;
+        }
+        return ['project' => $project, 'timing' => $timing, 'text' => $text, 'source' => $note] + $dates;
     }
 
     private function sourceDate(array $note): array

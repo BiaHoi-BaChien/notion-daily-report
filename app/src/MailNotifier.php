@@ -69,6 +69,9 @@ final class MailNotifier implements MailNotifierInterface
         $escapedBody = $bodyIsHtml
             ? $normalizedBody
             : htmlspecialchars($normalizedBody, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $content = $bodyIsHtml
+            ? '<div style="font-size:14px;line-height:1.75;word-wrap:break-word;">' . $escapedBody . '</div>'
+            : '<pre style="margin:0;white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:14px;line-height:1.75;">' . $escapedBody . '</pre>';
 
         return <<<HTML
 <!doctype html>
@@ -79,7 +82,7 @@ final class MailNotifier implements MailNotifierInterface
 </head>
 <body style="margin:0;padding:24px;background:#f4f6f8;color:#111827;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Yu Gothic',Meiryo,sans-serif;">
   <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #d9dee7;border-radius:8px;padding:24px;">
-    <pre style="margin:0;white-space:pre-wrap;word-break:break-word;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Yu Gothic',Meiryo,sans-serif;font-size:14px;line-height:1.75;color:#111827;">{$escapedBody}</pre>
+    {$content}
   </div>
 </body>
 </html>

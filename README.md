@@ -1,6 +1,6 @@
 # notion-daily-report
 
-PHP 8.5.12+ CLI batch that reads near-term Notion data-source items, filters and formats them in PHP, asks OpenAI for optional structured highlights and meeting follow-ups, and can send a Japanese daily report to Slack and email.
+PHP 8.5.12+ CLI batch that reads near-term Notion data-source items, filters and formats them in PHP, asks OpenAI for optional source-backed project trends, and can send a Japanese daily report to Slack and email.
 
 ## Requirements
 
@@ -126,10 +126,10 @@ Required and optional properties for each source:
 
 `BIRTHDAY_NOTION_DATA_SOURCE_ID` can also be left empty to disable birthday checks. The birthday date must include the birth year when the report should display the employee's age.
 
-Health data-source IDs and property names are configured entirely through environment variables. Leave an ID empty to omit that metric. The report adds a `🏥 健康` section immediately before `💡 その他トピックス` and displays the latest valid measurement per metric. The report date, including `--date`, is the upper bound. Steps display only the date; weight and vitals retain the measurement time. Set `NOTION_WEIGHT_DETAIL_URL`, `NOTION_STEPS_DETAIL_URL`, and `NOTION_VITAL_DETAIL_URL` to the respective database overview URLs to enable detail links. A metric with no usable records or a failed query is omitted; the whole section is omitted when all three metrics are unavailable.
+Health data-source IDs and property names are configured entirely through environment variables. Leave an ID empty to omit that metric. The report adds a `健康` section immediately before `その他` and displays the latest valid measurement per metric. The report date, including `--date`, is the upper bound. Steps display only the date; weight and vitals retain the measurement time. Set `NOTION_WEIGHT_DETAIL_URL`, `NOTION_STEPS_DETAIL_URL`, and `NOTION_VITAL_DETAIL_URL` to the respective database overview URLs to enable detail links. A metric with no usable records or a failed query is omitted; the whole section is omitted when all three metrics are unavailable.
 
 ```text
-🏥 健康
+健康
 ・体重：8月11日 07:16｜73.25kg｜詳細
 ・歩数：8月11日｜4,275歩｜詳細
 ・バイタル：8月11日 21:11｜120/80mmHg｜脈拍70回/分｜詳細
@@ -148,7 +148,7 @@ Update `app/config/app.php` if your Notion property names differ from the defaul
 
 Add more entries to the `sources` array to process multiple Notion sources in one run. Each source is fetched, extracted, and filtered independently; if one source fails, the batch logs that failure and continues with the remaining enabled sources.
 
-`OPENAI_API_KEY` is optional. When it is set and `OPENAI_ENABLED=true`, the schedule (excluding health measurements) and related meeting notes are sent to the existing Responses API call. The response is structured JSON with at most two schedule highlights and two meeting points. Source IDs and text are validated locally; source dates and links are attached from Notion data. With AI disabled, unavailable, or returning invalid output, the overview uses the first two timed-order items plus the locally determined deadline status. Meeting summaries are marked unavailable, with source links when available.
+`OPENAI_API_KEY` is optional. With `OPENAI_ENABLED=true`, recent meeting notes are sent to the Responses API for up to five source-backed project trends. The result is reused by every delivery format; schedules and health measurements are not sent. If AI is disabled, unavailable, or returns invalid results, the local schedule and health sections remain and project trends show their unavailable status.
 
 The OpenAI API requires a model in each request; there is no server-side `AUTO` model. This app supports an app-level `OPENAI_MODEL=auto`, which tries `OPENAI_MODEL_CANDIDATES` from left to right and falls back to the local classified report if none are available. You can also set `OPENAI_MODEL` to one exact model available in your project.
 
@@ -156,16 +156,28 @@ The OpenAI API requires a model in each request; there is no server-side `AUTO` 
 
 SMTP settings are optional. Mail is sent only when `MAIL_ENABLED=true` and `SMTP_HOST`, `MAIL_FROM`, and `MAIL_TO` are configured. `MAIL_TO` accepts comma-separated recipients. Set `MAIL_ENABLED=false` to skip email even when SMTP settings are configured.
 
-Notion report creation is optional. Set `REPORT_NOTION_ENABLED=true` and `REPORT_NOTION_DATA_SOURCE_ID` to save each daily report as a page in a Notion data source. The page body starts with the up-to-three-item daily overview and is generated with Notion blocks: `heading_2`, `heading_3`, icon callouts, linked bullet items, and two-column schedule/task tables (time and linked title, with the group on the next line in gray without a link). Hidden or absent groups add no extra line. If a title/group cell exceeds Notion's 100-rich-text-element limit, its full content continues in following rows with an empty time cell; tables are also split at 100 rows. This layout is shared by mobile and desktop and applies to newly generated reports; existing pages are not rewritten. It intentionally does not use duplicate title headings or `divider` blocks. Configure `REPORT_NOTION_TITLE_PROPERTY`, `REPORT_NOTION_DATE_PROPERTY`, and optional `REPORT_NOTION_RUN_ID_PROPERTY` when your report data source uses different property names.
+Notion report creation is optional. Set `REPORT_NOTION_ENABLED=true` and `REPORT_NOTION_DATA_SOURCE_ID` to save each daily report as a page in a Notion data source. Configure `REPORT_NOTION_TITLE_PROPERTY`, `REPORT_NOTION_DATE_PROPERTY`, and optional `REPORT_NOTION_RUN_ID_PROPERTY` when your report data source uses different property names. The layout below is shared by Notion, Slack, HTML email, and plain-text email. Existing Notion pages are not rewritten.
+
+### レポートの共通構成
+
+- 「今日の予定」「案件動向」「以降の予定」「健康」「その他」の順に表示します。健康・その他は対象データがある場合に表示します。Notionはアイコンなしcallout、HTMLメールは枠付きセクション、Slack・テキストメールは見出しと箇条書きです。見出し・案件名・日付ラベルの文字サイズをそろえ、太字で区別します（テキストメールは装飾なし）。
+- 「今日の要点」「明日の時間付き予定」は表示しません。本日期限の案件タスクは「今日の予定」内、明日の予定は「以降の予定」の日付別一覧にまとめます。期限ソースの取得失敗は「本日期限：取得不可」と表示します。
+- 予定は表を使わず、太字の時刻とリンク付き予定名を同じ箇条書きに表示します。案件名は次の行にグレーで添えます。長いタイトルは省略せず折り返し、Notionの配列上限を超える場合は続きの段落・calloutに分割します。
+- 「案件動向」は直近14日間に登録された議事録を会議日でも確認し、当日以降の具体的な予定を3〜5件を目安に最大5件紹介します。当日の予定にある案件には限定しません。案件名・予定時期・内容・出典リンクを表示し、完了・中止・変更は新しい情報を優先するようAIに指示します。相対日付は議事録の会議日基準で変換し、出典ID・原文引用・案件名・日付範囲をPHPで検査します。該当情報なしと取得・要約失敗は区別して表示します。健康データはAIへ送信しません。
+- 体重は前回測定、歩数は前日（欠測時は前回記録）と比較し、値の後ろに `↗（前日比 ＋824歩）`、`↘（前回比 −0.2kg）`、同値は `→（前回比 0kg）` の形式で表示します。比較対象がない・取得できない場合は追記しません。バイタルには増減を付けません。
+- その他の献立ラベルは「子どものお弁当」とします。RAMEN KIMURAの合計金額を隠す既存ルールは維持します。
+
+案件動向のAI生成は1回だけ行い、その結果と健康の比較データを全配信先で共有します。Notion出力が無効でもメール・Slackに反映します。指定モデルが利用できない場合には `OPENAI_MODEL_CANDIDATES`、最後に `gpt-6-sol` を順に試します。AIの意味解釈や予定変更の判断は完全には機械検証できないため、出典から確認できます。
+
+保存にはNotion公式APIのMarkdown v2を使用します。ブロックAPIではcalloutのアイコンが自動補完されるため、同じ生成ブロックから `<callout icon="">` を出力してアイコンなしを維持します。Notion API `2026-03-11` 以降が必要です。
 
 ## モーニングブリーフ
 
 子供のお弁当の「お店」が `RAMEN KIMURA` の場合、備考先頭の `合計金額: ...` はSlack・メール・NotionレポートとAI要約への入力に表示しません。数量など後続の備考、他店の表示、元のNotionデータは維持します。
 
-- 「今日の要点」は予定の要点最大2件＋「本日期限」の1行。期限の対象は従来どおり「各案件のタスク」です。0件なら期限詳細欄を省略します。取得・解析失敗、または期限ソース未設定の場合は「取得不可」と表示し、取得済みのタスクは残します。
-- 議事録は当日を含む14日間（当日−13日〜当日）、今日のToDo・カレンダー・案件タスクと同じProjectのものだけを対象とします。タイトル内の会議日（YYYY年M月D日、YYYY/M/D、YYYY-M-D）を優先し、なければ登録日を使います。Project未設定は対象外です。
-- 作成・更新日時と会議日が異なるページを取りこぼさないよう、Projectで候補を取得して会議日／登録日を検査し、対象の本文だけを読みます。ページ内の入れ子・ページ分割には対応しますが、リンク先の別ページや子ページ・DBは読みません。本文取得は1議事録あたり最大100リクエストで中断し、取得不可と表示します。
-- AIへの議事録送信には本文とチェック状態を含みます。新しい完了・変更情報を優先するよう指示し、古いフォロー項目は「完了確認が必要」と表示します。要約は自動生成なので原文リンクで確認できます。
+- 議事録は全案件を対象に、当日を含む直近14日間の登録候補を取得し、タイトル内の会議日（YYYY年M月D日、YYYY/M/D、YYYY-M-D）を優先して期間を確認します。会議日がなければ登録日を使います。
+- AIへの入力には議事録の本文・会議日・案件名・チェック状態を含めます。今日以降の具体的な予定を最大5件抽出し、日付・案件名・出典・原文根拠を検証します。無効な項目だけを除外し、有効な項目を残します。
+- ページ内の入れ子・ページ分割に対応しますが、リンク先の別ページ・子ページ・DBは読みません。本文取得は1議事録あたり最大100リクエストで中断し、取得不可と表示します。
 
 追加設定（実値はローカル／本番の環境設定にのみ保存）：
 
@@ -192,6 +204,14 @@ Run deterministically for a specific date:
 ```bash
 php app/batch/daily_report.php --date=2026-04-16
 ```
+
+Notion版だけを実データで確認する場合（メール・Slack・失敗通知メールは送信しません）：
+
+```powershell
+php app/batch/daily_report.php --date=2026-10-29 --preview-notion
+```
+
+`--preview-notion` は設定済みのNotion出力先へタイトル末尾が「（確認用）」の新規ページを作成し、URLを標準出力へ表示します。通常配信用の `REPORT_NOTION_ENABLED=false` はこの実行時だけ無視し、設定ファイルは変更しません。案件動向の生成は通常実行と共通です。ページ作成失敗は終了コード1になります。
 
 The report is sent to Slack and email when configured. The batch does not print the report body to stdout; operational logs are written to `app/logs/daily_report.log` by default.
 
@@ -233,7 +253,7 @@ Keep `.env` outside any public web root whenever possible.
 - Continues processing other sources when one source fails, and logs the failed source
 - Classifies items as `overdue`, `today`, `upcoming`, or `recent_past`
 - Formats the report locally in PHP by section, project, genre, and date/time
-- Sends a health-free schedule and related meeting notes to OpenAI for optional structured highlights when configured
+- Sends recent meeting notes to OpenAI for optional source-backed project trends when configured
 - Saves the final report to Notion, Slack, and email when configured, and writes JSON-line logs
 - Logs source-level start/completion/failure, fetch/extraction/filter counts, classification counts, notification status, report size, and run duration for operation checks
 - Logs Notion, Slack, or email delivery failures without blocking the remaining delivery steps
